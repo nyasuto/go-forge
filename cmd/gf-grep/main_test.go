@@ -241,6 +241,137 @@ func TestGrepRegex(t *testing.T) {
 	}
 }
 
+func TestGrepJSONField(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		input   string
+		opts    grepOptions
+		want    string
+		found   bool
+	}{
+		// 正常系
+		{
+			name:    "トップレベルキーでマッチ",
+			pattern: "error",
+			input:   `{"level":"error","msg":"disk full"}` + "\n" + `{"level":"info","msg":"ok"}` + "\n",
+			opts:    grepOptions{jsonField: "level"},
+			want:    `{"level":"error","msg":"disk full"}` + "\n",
+			found:   true,
+		},
+		{
+			name:    "値の部分一致",
+			pattern: "disk",
+			input:   `{"level":"error","msg":"disk full"}` + "\n" + `{"level":"info","msg":"ok"}` + "\n",
+			opts:    grepOptions{jsonField: "msg"},
+			want:    `{"level":"error","msg":"disk full"}` + "\n",
+			found:   true,
+		},
+		{
+			name:    "ネストされたキーでマッチ",
+			pattern: "admin",
+			input:   `{"user":{"role":"admin","name":"alice"}}` + "\n" + `{"user":{"role":"viewer","name":"bob"}}` + "\n",
+			opts:    grepOptions{jsonField: "user.role"},
+			want:    `{"user":{"role":"admin","name":"alice"}}` + "\n",
+			found:   true,
+		},
+		// 正規表現との組み合わせ
+		{
+			name:    "正規表現パターン",
+			pattern: "^err",
+			input:   `{"level":"error","msg":"fail"}` + "\n" + `{"level":"warning","msg":"err in msg"}` + "\n",
+			opts:    grepOptions{jsonField: "level"},
+			want:    `{"level":"error","msg":"fail"}` + "\n",
+			found:   true,
+		},
+		// -i との組み合わせ
+		{
+			name:    "-i 大文字小文字無視とJSON",
+			pattern: "ERROR",
+			input:   `{"level":"error","msg":"fail"}` + "\n" + `{"level":"info","msg":"ok"}` + "\n",
+			opts:    grepOptions{jsonField: "level", ignoreCase: true},
+			want:    `{"level":"error","msg":"fail"}` + "\n",
+			found:   true,
+		},
+		// -v との組み合わせ
+		{
+			name:    "-v 反転とJSON",
+			pattern: "info",
+			input:   `{"level":"error","msg":"fail"}` + "\n" + `{"level":"info","msg":"ok"}` + "\n",
+			opts:    grepOptions{jsonField: "level", invert: true},
+			want:    `{"level":"error","msg":"fail"}` + "\n",
+			found:   true,
+		},
+		// -c との組み合わせ
+		{
+			name:    "-c カウントとJSON",
+			pattern: "error",
+			input:   `{"level":"error","msg":"a"}` + "\n" + `{"level":"error","msg":"b"}` + "\n" + `{"level":"info","msg":"c"}` + "\n",
+			opts:    grepOptions{jsonField: "level", count: true},
+			want:    "2\n",
+			found:   true,
+		},
+		// 異常系
+		{
+			name:    "非JSONの行はスキップ",
+			pattern: "hello",
+			input:   "not json\n" + `{"msg":"hello"}` + "\n",
+			opts:    grepOptions{jsonField: "msg"},
+			want:    `{"msg":"hello"}` + "\n",
+			found:   true,
+		},
+		{
+			name:    "存在しないキー→マッチなし",
+			pattern: "test",
+			input:   `{"level":"error","msg":"test"}` + "\n",
+			opts:    grepOptions{jsonField: "nonexistent"},
+			want:    "",
+			found:   false,
+		},
+		// エッジケース
+		{
+			name:    "数値フィールドのマッチ",
+			pattern: "42",
+			input:   `{"code":42,"msg":"found"}` + "\n" + `{"code":200,"msg":"ok"}` + "\n",
+			opts:    grepOptions{jsonField: "code"},
+			want:    `{"code":42,"msg":"found"}` + "\n",
+			found:   true,
+		},
+		{
+			name:    "マルチバイト値のマッチ",
+			pattern: "エラー",
+			input:   `{"msg":"エラー発生"}` + "\n" + `{"msg":"正常"}` + "\n",
+			opts:    grepOptions{jsonField: "msg"},
+			want:    `{"msg":"エラー発生"}` + "\n",
+			found:   true,
+		},
+		{
+			name:    "空入力",
+			pattern: "test",
+			input:   "",
+			opts:    grepOptions{jsonField: "key"},
+			want:    "",
+			found:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := strings.NewReader(tt.input)
+			var buf bytes.Buffer
+			re := compileTestPattern(t, tt.pattern, tt.opts.ignoreCase)
+			got := grep(r, &buf, re, "", tt.opts)
+
+			if got != tt.found {
+				t.Errorf("grep() found = %v, want %v", got, tt.found)
+			}
+			if buf.String() != tt.want {
+				t.Errorf("grep() output = %q, want %q", buf.String(), tt.want)
+			}
+		})
+	}
+}
+
 func TestExpandRecursive(t *testing.T) {
 	dir := t.TempDir()
 	// Create directory structure
@@ -494,6 +625,74 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		want := f1 + ":2\n" + f2 + ":1\n"
+		if string(out) != want {
+			t.Errorf("got %q, want %q", string(out), want)
+		}
+	})
+
+	// Tier 3 統合テスト
+	t.Run("-j JSONフィールド検索", func(t *testing.T) {
+		cmd := exec.Command(bin, "-j", "level", "error")
+		cmd.Stdin = strings.NewReader(`{"level":"error","msg":"disk full"}` + "\n" + `{"level":"info","msg":"ok"}` + "\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := `{"level":"error","msg":"disk full"}` + "\n"
+		if string(out) != want {
+			t.Errorf("got %q, want %q", string(out), want)
+		}
+	})
+
+	t.Run("-j ネストされたキー", func(t *testing.T) {
+		cmd := exec.Command(bin, "-j", "user.role", "admin")
+		cmd.Stdin = strings.NewReader(`{"user":{"role":"admin"}}` + "\n" + `{"user":{"role":"viewer"}}` + "\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := `{"user":{"role":"admin"}}` + "\n"
+		if string(out) != want {
+			t.Errorf("got %q, want %q", string(out), want)
+		}
+	})
+
+	t.Run("-j -n -c 組み合わせ", func(t *testing.T) {
+		cmd := exec.Command(bin, "-j", "level", "-c", "error")
+		cmd.Stdin = strings.NewReader(`{"level":"error","msg":"a"}` + "\n" + `{"level":"error","msg":"b"}` + "\n" + `{"level":"info","msg":"c"}` + "\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(out) != "2\n" {
+			t.Errorf("got %q, want %q", string(out), "2\n")
+		}
+	})
+
+	t.Run("-j ファイル入力", func(t *testing.T) {
+		tmp := filepath.Join(t.TempDir(), "data.json")
+		content := `{"status":"ok","code":200}` + "\n" + `{"status":"fail","code":500}` + "\n"
+		os.WriteFile(tmp, []byte(content), 0644)
+
+		cmd := exec.Command(bin, "-j", "status", "fail", tmp)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := `{"status":"fail","code":500}` + "\n"
+		if string(out) != want {
+			t.Errorf("got %q, want %q", string(out), want)
+		}
+	})
+
+	t.Run("-j 非JSONの行はスキップ", func(t *testing.T) {
+		cmd := exec.Command(bin, "-j", "msg", "hello")
+		cmd.Stdin = strings.NewReader("plain text\n" + `{"msg":"hello world"}` + "\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := `{"msg":"hello world"}` + "\n"
 		if string(out) != want {
 			t.Errorf("got %q, want %q", string(out), want)
 		}

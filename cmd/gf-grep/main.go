@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ type grepOptions struct {
 	count      bool
 	lineNumber bool
 	recursive  bool
+	jsonField  string
 }
 
 func main() {
@@ -28,6 +30,7 @@ func main() {
 	flag.BoolVar(&opts.count, "c", false, "マッチした行数を表示")
 	flag.BoolVar(&opts.lineNumber, "n", false, "行番号を表示")
 	flag.BoolVar(&opts.recursive, "r", false, "ディレクトリを再帰的に検索")
+	flag.StringVar(&opts.jsonField, "j", "", "JSONの指定キーのみを対象にマッチ")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-grep [OPTIONS] PATTERN [FILE]...\n\nパターンにマッチする行を表示する。\n\nOptions:\n")
@@ -162,7 +165,13 @@ func grep(r io.Reader, w io.Writer, re *regexp.Regexp, prefix string, opts grepO
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-		matched := re.MatchString(line)
+
+		var matched bool
+		if opts.jsonField != "" {
+			matched = matchJSONField(line, re, opts.jsonField)
+		} else {
+			matched = re.MatchString(line)
+		}
 
 		if opts.invert {
 			matched = !matched
@@ -186,6 +195,52 @@ func grep(r io.Reader, w io.Writer, re *regexp.Regexp, prefix string, opts grepO
 	}
 
 	return found
+}
+
+// matchJSONField parses line as JSON and checks if the specified field's value matches the pattern.
+// Supports dot-separated nested keys (e.g., "user.name").
+func matchJSONField(line string, re *regexp.Regexp, field string) bool {
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(line), &obj); err != nil {
+		return false
+	}
+	val, ok := lookupJSON(obj, field)
+	if !ok {
+		return false
+	}
+	s := fmt.Sprintf("%v", val)
+	return re.MatchString(s)
+}
+
+// lookupJSON retrieves a value from a nested map using dot-separated keys.
+func lookupJSON(obj map[string]interface{}, field string) (interface{}, bool) {
+	keys := splitDot(field)
+	var current interface{} = obj
+	for _, key := range keys {
+		m, ok := current.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		current, ok = m[key]
+		if !ok {
+			return nil, false
+		}
+	}
+	return current, true
+}
+
+// splitDot splits a string by dots.
+func splitDot(s string) []string {
+	var parts []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '.' {
+			parts = append(parts, s[start:i])
+			start = i + 1
+		}
+	}
+	parts = append(parts, s[start:])
+	return parts
 }
 
 func printLine(w *bufio.Writer, prefix, line string, lineNum int, showLineNum bool) {
