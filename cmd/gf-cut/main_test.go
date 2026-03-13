@@ -284,6 +284,141 @@ func TestRunWithFiles(t *testing.T) {
 	})
 }
 
+func TestSelectChars(t *testing.T) {
+	tests := []struct {
+		name   string
+		runes  []rune
+		ranges []fieldRange
+		want   string
+	}{
+		{
+			name:   "single char",
+			runes:  []rune("abcdef"),
+			ranges: []fieldRange{{3, 3}},
+			want:   "c",
+		},
+		{
+			name:   "char range",
+			runes:  []rune("abcdef"),
+			ranges: []fieldRange{{2, 4}},
+			want:   "bcd",
+		},
+		{
+			name:   "open end range",
+			runes:  []rune("abcdef"),
+			ranges: []fieldRange{{4, -1}},
+			want:   "def",
+		},
+		{
+			name:   "multiple positions",
+			runes:  []rune("abcdef"),
+			ranges: []fieldRange{{1, 1}, {3, 3}, {5, 5}},
+			want:   "ace",
+		},
+		{
+			name:   "out of range",
+			runes:  []rune("ab"),
+			ranges: []fieldRange{{5, 5}},
+			want:   "",
+		},
+		{
+			name:   "multibyte rune positions",
+			runes:  []rune("あいうえお"),
+			ranges: []fieldRange{{2, 4}},
+			want:   "いうえ",
+		},
+		{
+			name:   "mixed ascii and multibyte",
+			runes:  []rune("a漢b字c"),
+			ranges: []fieldRange{{1, 3}},
+			want:   "a漢b",
+		},
+		{
+			name:   "emoji rune positions",
+			runes:  []rune("🍎🍊🍇🍉"),
+			ranges: []fieldRange{{2, 3}},
+			want:   "🍊🍇",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := selectChars(tt.runes, tt.ranges)
+			if got != tt.want {
+				t.Errorf("selectChars() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunCharMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		ranges   []fieldRange
+		wantOut  string
+		wantCode int
+	}{
+		{
+			name:    "basic char cut",
+			input:   "abcdef\nghijkl\n",
+			ranges:  []fieldRange{{1, 3}},
+			wantOut: "abc\nghi\n",
+		},
+		{
+			name:    "char cut single position",
+			input:   "hello world\n",
+			ranges:  []fieldRange{{7, 7}},
+			wantOut: "w\n",
+		},
+		{
+			name:    "char cut open end",
+			input:   "abcdef\n",
+			ranges:  []fieldRange{{4, -1}},
+			wantOut: "def\n",
+		},
+		{
+			name:    "char cut multibyte",
+			input:   "東京都新宿区\n",
+			ranges:  []fieldRange{{1, 3}},
+			wantOut: "東京都\n",
+		},
+		{
+			name:    "char cut empty input",
+			input:   "",
+			ranges:  []fieldRange{{1, 5}},
+			wantOut: "",
+		},
+		{
+			name:    "char cut beyond line length",
+			input:   "ab\n",
+			ranges:  []fieldRange{{1, 10}},
+			wantOut: "ab\n",
+		},
+		{
+			name:    "char cut multiple ranges",
+			input:   "abcdefghij\n",
+			ranges:  []fieldRange{{1, 2}, {5, 6}, {9, 10}},
+			wantOut: "abefij\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			stdin := strings.NewReader(tt.input)
+			opts := cutOptions{mode: modeChars}
+			code := run(nil, stdin, &stdout, &stderr, opts, tt.ranges)
+			if code != tt.wantCode {
+				t.Errorf("exit code = %d, want %d", code, tt.wantCode)
+			}
+			if stdout.String() != tt.wantOut {
+				t.Errorf("stdout = %q, want %q", stdout.String(), tt.wantOut)
+			}
+		})
+	}
+}
+
 func TestRunVersion(t *testing.T) {
 	// This is tested indirectly through the main function behavior,
 	// but we can at least verify the version constant

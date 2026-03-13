@@ -12,9 +12,17 @@ import (
 
 const version = "0.1.0"
 
+type cutMode int
+
+const (
+	modeFields cutMode = iota
+	modeChars
+)
+
 type cutOptions struct {
 	delimiter string
 	fields    string
+	mode      cutMode
 }
 
 type fieldRange struct {
@@ -26,6 +34,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "show version")
 	optD := flag.String("d", "\t", "use DELIM instead of TAB for field delimiter")
 	optF := flag.String("f", "", "select only these fields (e.g. 1,3 or 1-3 or 2-)")
+	optC := flag.String("c", "", "select only these characters (e.g. 1-5 or 3,7 or 4-)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-cut [OPTIONS] [FILE...]\n")
 		fmt.Fprintf(os.Stderr, "Remove sections from each line of files.\n\n")
@@ -38,12 +47,26 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *optF == "" {
-		fmt.Fprintf(os.Stderr, "gf-cut: you must specify a list of fields\n")
+	if *optF != "" && *optC != "" {
+		fmt.Fprintf(os.Stderr, "gf-cut: only one type of list may be specified\n")
 		os.Exit(2)
 	}
 
-	ranges, err := parseFields(*optF)
+	if *optF == "" && *optC == "" {
+		fmt.Fprintf(os.Stderr, "gf-cut: you must specify a list of fields or characters\n")
+		os.Exit(2)
+	}
+
+	var spec string
+	mode := modeFields
+	if *optC != "" {
+		spec = *optC
+		mode = modeChars
+	} else {
+		spec = *optF
+	}
+
+	ranges, err := parseFields(spec)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gf-cut: %v\n", err)
 		os.Exit(2)
@@ -51,7 +74,8 @@ func main() {
 
 	opts := cutOptions{
 		delimiter: *optD,
-		fields:    *optF,
+		fields:    spec,
+		mode:      mode,
 	}
 
 	args := flag.Args()
@@ -144,9 +168,13 @@ func processReader(r io.Reader, w *bufio.Writer, opts cutOptions, ranges []field
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
-		fields := strings.Split(line, opts.delimiter)
-		selected := selectFields(fields, ranges)
-		fmt.Fprintln(w, strings.Join(selected, opts.delimiter))
+		if opts.mode == modeChars {
+			fmt.Fprintln(w, selectChars([]rune(line), ranges))
+		} else {
+			fields := strings.Split(line, opts.delimiter)
+			selected := selectFields(fields, ranges)
+			fmt.Fprintln(w, strings.Join(selected, opts.delimiter))
+		}
 	}
 }
 
@@ -167,6 +195,23 @@ func selectFields(fields []string, ranges []fieldRange) []string {
 		}
 	}
 	return result
+}
+
+func selectChars(runes []rune, ranges []fieldRange) string {
+	var result []rune
+	for _, r := range ranges {
+		start := r.start
+		end := r.end
+		if end == -1 {
+			end = len(runes)
+		}
+		for i := start; i <= end; i++ {
+			if i >= 1 && i <= len(runes) {
+				result = append(result, runes[i-1])
+			}
+		}
+	}
+	return string(result)
 }
 
 func unwrapPathError(err error) error {

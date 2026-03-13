@@ -1,5 +1,31 @@
 # gf-cut テスト結果
 
+## Tier 2: -c 文字位置指定・フィールド範囲
+
+- 実行日: 2026-03-14
+- 結果: ALL PASS (47件)
+
+### 追加テスト内訳
+
+#### TestSelectChars (8件)
+- single char: PASS
+- char range: PASS
+- open end range: PASS
+- multiple positions: PASS
+- out of range: PASS
+- multibyte rune positions: PASS
+- mixed ascii and multibyte: PASS
+- emoji rune positions: PASS
+
+#### TestRunCharMode (7件)
+- basic char cut: PASS
+- char cut single position: PASS
+- char cut open end: PASS
+- char cut multibyte: PASS
+- char cut empty input: PASS
+- char cut beyond line length: PASS
+- char cut multiple ranges: PASS
+
 ## Tier 1: コア機能
 
 - 実行日: 2026-03-14
