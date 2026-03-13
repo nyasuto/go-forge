@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -15,6 +17,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "バージョンを表示")
 	numLines := flag.Int("n", 10, "表示する行数")
 	follow := flag.Bool("f", false, "ファイル追記を監視して表示し続ける")
+	pattern := flag.String("p", "", "マッチ行をハイライト表示するパターン（正規表現）")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-tail [OPTIONS] [FILE]...\n\nファイルの末尾部分を表示する。\n\nOptions:\n")
 		flag.PrintDefaults()
@@ -29,6 +32,16 @@ func main() {
 	if *numLines < 0 {
 		fmt.Fprintf(os.Stderr, "gf-tail: invalid number of lines: '%d'\n", *numLines)
 		os.Exit(2)
+	}
+
+	var re *regexp.Regexp
+	if *pattern != "" {
+		var err error
+		re, err = regexp.Compile(*pattern)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "gf-tail: invalid pattern: %v\n", err)
+			os.Exit(2)
+		}
 	}
 
 	args := flag.Args()
@@ -54,7 +67,7 @@ func main() {
 	exitCode := 0
 
 	if len(args) == 0 {
-		if err := tail(os.Stdin, os.Stdout, *numLines); err != nil {
+		if err := tail(os.Stdin, os.Stdout, *numLines, re); err != nil {
 			fmt.Fprintf(os.Stderr, "gf-tail: %v\n", err)
 			os.Exit(1)
 		}
@@ -83,21 +96,48 @@ func main() {
 			fmt.Fprintf(os.Stdout, "==> %s <==\n", arg)
 		}
 
-		if err := tail(r, os.Stdout, *numLines); err != nil {
+		if err := tail(r, os.Stdout, *numLines, re); err != nil {
 			fmt.Fprintf(os.Stderr, "gf-tail: %v\n", err)
 			exitCode = 1
 		}
 	}
 
 	if *follow && exitCode == 0 {
-		followFile(args[0], os.Stdout)
+		followFile(args[0], os.Stdout, re)
 		// followFile runs forever (or until error)
 	}
 
 	os.Exit(exitCode)
 }
 
-func tail(r io.Reader, w io.Writer, n int) error {
+// highlightLine applies ANSI highlight to matching portions of a line.
+// If re is nil or doesn't match, the line is returned unchanged.
+func highlightLine(line string, re *regexp.Regexp) string {
+	if re == nil {
+		return line
+	}
+	locs := re.FindAllStringIndex(line, -1)
+	if locs == nil {
+		return line
+	}
+	const (
+		red   = "\033[1;31m"
+		reset = "\033[0m"
+	)
+	var b strings.Builder
+	last := 0
+	for _, loc := range locs {
+		b.WriteString(line[last:loc[0]])
+		b.WriteString(red)
+		b.WriteString(line[loc[0]:loc[1]])
+		b.WriteString(reset)
+		last = loc[1]
+	}
+	b.WriteString(line[last:])
+	return b.String()
+}
+
+func tail(r io.Reader, w io.Writer, n int, re *regexp.Regexp) error {
 	if n == 0 {
 		return nil
 	}
@@ -136,7 +176,7 @@ func tail(r io.Reader, w io.Writer, n int) error {
 
 	for i := 0; i < total; i++ {
 		idx := (start + i) % n
-		fmt.Fprintln(bw, ring[idx])
+		fmt.Fprintln(bw, highlightLine(ring[idx], re))
 	}
 
 	return bw.Flush()
@@ -144,7 +184,7 @@ func tail(r io.Reader, w io.Writer, n int) error {
 
 // followFile polls the file for new data and writes it to w.
 // It runs until an error occurs or the process is interrupted.
-func followFile(path string, w io.Writer) {
+func followFile(path string, w io.Writer, re *regexp.Regexp) {
 	f, err := os.Open(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gf-tail: %v\n", err)
@@ -160,37 +200,76 @@ func followFile(path string, w io.Writer) {
 	}
 
 	bw := bufio.NewWriter(w)
-	buf := make([]byte, 4096)
 
-	for {
-		time.Sleep(100 * time.Millisecond)
+	if re == nil {
+		// No pattern: stream raw bytes as before
+		buf := make([]byte, 4096)
+		for {
+			time.Sleep(100 * time.Millisecond)
 
-		info, err := os.Stat(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "gf-tail: %v\n", err)
-			return
-		}
-
-		newSize := info.Size()
-		if newSize == offset {
-			continue
-		}
-
-		if newSize < offset {
-			// File was truncated, reset to beginning
-			offset = 0
-			f.Seek(0, io.SeekStart)
-		}
-
-		for offset < newSize {
-			n, err := f.Read(buf)
-			if n > 0 {
-				bw.Write(buf[:n])
-				bw.Flush()
-				offset += int64(n)
-			}
+			info, err := os.Stat(path)
 			if err != nil {
-				break
+				fmt.Fprintf(os.Stderr, "gf-tail: %v\n", err)
+				return
+			}
+
+			newSize := info.Size()
+			if newSize == offset {
+				continue
+			}
+
+			if newSize < offset {
+				offset = 0
+				f.Seek(0, io.SeekStart)
+			}
+
+			for offset < newSize {
+				n, err := f.Read(buf)
+				if n > 0 {
+					bw.Write(buf[:n])
+					bw.Flush()
+					offset += int64(n)
+				}
+				if err != nil {
+					break
+				}
+			}
+		}
+	} else {
+		// With pattern: read line by line so we can highlight
+		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+		for {
+			time.Sleep(100 * time.Millisecond)
+
+			info, err := os.Stat(path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "gf-tail: %v\n", err)
+				return
+			}
+
+			newSize := info.Size()
+			if newSize == offset {
+				continue
+			}
+
+			if newSize < offset {
+				offset = 0
+				f.Seek(0, io.SeekStart)
+				scanner = bufio.NewScanner(f)
+				scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+			}
+
+			for scanner.Scan() {
+				line := scanner.Text()
+				fmt.Fprintln(bw, highlightLine(line, re))
+				bw.Flush()
+			}
+
+			// Update offset to current position
+			pos, err := f.Seek(0, io.SeekCurrent)
+			if err == nil {
+				offset = pos
 			}
 		}
 	}

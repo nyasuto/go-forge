@@ -7,10 +7,93 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestHighlightLine(t *testing.T) {
+	tests := []struct {
+		name    string
+		line    string
+		pattern string
+		want    string
+	}{
+		{
+			name:    "no match",
+			line:    "hello world",
+			pattern: "xyz",
+			want:    "hello world",
+		},
+		{
+			name:    "single match",
+			line:    "hello world",
+			pattern: "world",
+			want:    "hello \033[1;31mworld\033[0m",
+		},
+		{
+			name:    "multiple matches",
+			line:    "foo bar foo",
+			pattern: "foo",
+			want:    "\033[1;31mfoo\033[0m bar \033[1;31mfoo\033[0m",
+		},
+		{
+			name:    "regex match",
+			line:    "error: file not found",
+			pattern: "err.*:",
+			want:    "\033[1;31merror:\033[0m file not found",
+		},
+		{
+			name:    "nil regex returns unchanged",
+			line:    "unchanged",
+			pattern: "",
+			want:    "unchanged",
+		},
+		{
+			name:    "multibyte match",
+			line:    "こんにちは世界",
+			pattern: "世界",
+			want:    "こんにちは\033[1;31m世界\033[0m",
+		},
+		{
+			name:    "entire line match",
+			line:    "error",
+			pattern: "^error$",
+			want:    "\033[1;31merror\033[0m",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var re *regexp.Regexp
+			if tt.pattern != "" {
+				re = regexp.MustCompile(tt.pattern)
+			}
+			got := highlightLine(tt.line, re)
+			if got != tt.want {
+				t.Errorf("highlightLine(%q, %q) = %q, want %q", tt.line, tt.pattern, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTailWithPattern(t *testing.T) {
+	re := regexp.MustCompile("error")
+	input := "info: ok\nerror: fail\ndebug: trace\n"
+	var buf bytes.Buffer
+	err := tail(strings.NewReader(input), &buf, 10, re)
+	if err != nil {
+		t.Fatalf("tail() error = %v", err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "\033[1;31merror\033[0m") {
+		t.Errorf("expected highlighted 'error', got %q", got)
+	}
+	if strings.Contains(got, "\033[1;31minfo\033[0m") {
+		t.Errorf("'info' should not be highlighted, got %q", got)
+	}
+}
 
 func TestTail(t *testing.T) {
 	tests := []struct {
@@ -95,7 +178,7 @@ func TestTail(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := strings.NewReader(tt.input)
 			var buf bytes.Buffer
-			err := tail(r, &buf, tt.n)
+			err := tail(r, &buf, tt.n, nil)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("tail() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -380,6 +463,112 @@ func TestIntegration(t *testing.T) {
 		got := outBuf.String()
 		if !strings.Contains(got, "new1\n") {
 			t.Errorf("expected truncated+rewritten content 'new1', got %q", got)
+		}
+	})
+
+	// --- Tier 3: -p pattern highlight tests ---
+
+	t.Run("-p highlights matching text in output", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "pattern.txt")
+		os.WriteFile(tmpFile, []byte("info: ok\nerror: fail\ndebug: trace\n"), 0644)
+
+		cmd := exec.Command(bin, "-p", "error", tmpFile)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got := string(out)
+		if !strings.Contains(got, "\033[1;31merror\033[0m") {
+			t.Errorf("expected 'error' to be highlighted, got %q", got)
+		}
+		// non-matching lines should not contain ANSI codes
+		if strings.Contains(got, "\033[1;31minfo\033[0m") {
+			t.Errorf("'info' should not be highlighted")
+		}
+	})
+
+	t.Run("-p with stdin", func(t *testing.T) {
+		cmd := exec.Command(bin, "-p", "warn", "-n", "3")
+		cmd.Stdin = strings.NewReader("info\nwarn: low disk\nerror\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got := string(out)
+		if !strings.Contains(got, "\033[1;31mwarn\033[0m") {
+			t.Errorf("expected 'warn' to be highlighted, got %q", got)
+		}
+	})
+
+	t.Run("-p with invalid regex exits 2", func(t *testing.T) {
+		cmd := exec.Command(bin, "-p", "[invalid")
+		cmd.Stdin = strings.NewReader("test\n")
+		err := cmd.Run()
+		if err == nil {
+			t.Fatal("expected error for invalid regex")
+		}
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("expected ExitError, got %T", err)
+		}
+		if exitErr.ExitCode() != 2 {
+			t.Errorf("exit code = %d, want 2", exitErr.ExitCode())
+		}
+	})
+
+	t.Run("-f -p highlights followed data", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "fp.txt")
+		os.WriteFile(tmpFile, []byte("start\n"), 0644)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, bin, "-f", "-p", "ERR", "-n", "1", tmpFile)
+		var outBuf bytes.Buffer
+		cmd.Stdout = &outBuf
+		cmd.Stderr = &bytes.Buffer{}
+
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("failed to start: %v", err)
+		}
+
+		time.Sleep(300 * time.Millisecond)
+
+		// Append a line with matching pattern
+		f, err := os.OpenFile(tmpFile, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			t.Fatalf("failed to open for append: %v", err)
+		}
+		fmt.Fprintln(f, "ERR: something broke")
+		fmt.Fprintln(f, "info: all good")
+		f.Close()
+
+		time.Sleep(500 * time.Millisecond)
+
+		cancel()
+		cmd.Wait()
+
+		got := outBuf.String()
+		if !strings.Contains(got, "\033[1;31mERR\033[0m") {
+			t.Errorf("expected 'ERR' to be highlighted in followed output, got %q", got)
+		}
+	})
+
+	t.Run("-p regex pattern", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "regex.txt")
+		os.WriteFile(tmpFile, []byte("2024-01-01 error\n2024-01-02 info\n2024-01-03 warn\n"), 0644)
+
+		cmd := exec.Command(bin, "-p", "error|warn", tmpFile)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got := string(out)
+		if !strings.Contains(got, "\033[1;31merror\033[0m") {
+			t.Errorf("expected 'error' to be highlighted, got %q", got)
+		}
+		if !strings.Contains(got, "\033[1;31mwarn\033[0m") {
+			t.Errorf("expected 'warn' to be highlighted, got %q", got)
 		}
 	})
 }

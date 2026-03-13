@@ -44,3 +44,33 @@
 | -f with stdin hyphen exits 2 | 異常系 | PASS |
 | -f with multiple files exits 2 | 異常系 | PASS |
 | -f detects file truncation | エッジケース | PASS |
+
+## Tier 3: -p パターンハイライト
+
+### 単体テスト (TestHighlightLine): 7件 全PASS
+
+| テスト名 | 種別 | 結果 |
+|----------|------|------|
+| no match | 正常系 | PASS |
+| single match | 正常系 | PASS |
+| multiple matches | 正常系 | PASS |
+| regex match | 正常系 | PASS |
+| nil regex returns unchanged | エッジケース | PASS |
+| multibyte match | エッジケース | PASS |
+| entire line match | エッジケース | PASS |
+
+### 単体テスト (TestTailWithPattern): 1件 PASS
+
+| テスト名 | 種別 | 結果 |
+|----------|------|------|
+| tail with pattern highlights matching text | 正常系 | PASS |
+
+### 統合テスト: 5件 全PASS
+
+| テスト名 | 種別 | 結果 |
+|----------|------|------|
+| -p highlights matching text in output | 正常系 | PASS |
+| -p with stdin | 正常系 | PASS |
+| -p with invalid regex exits 2 | 異常系 | PASS |
+| -f -p highlights followed data | 正常系 | PASS |
+| -p regex pattern | 正常系 | PASS |
