@@ -10,4 +10,5 @@ use (
 	./cmd/gf-find
 	./cmd/gf-sort
 	./cmd/gf-uniq
+	./cmd/gf-cut
 )

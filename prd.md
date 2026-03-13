@@ -141,7 +141,7 @@ goforge/
 
 #### gf-cut（フィールド切り出し）
 
-- [ ] Tier 1: `cmd/gf-cut/` 作成（go.mod初期化、go.workに追加）。`-d` デリミタ指定 + `-f` フィールド番号指定、stdin対応。テスト作成・通過。テスト結果を `docs/test-results/gf-cut.md` に記録。
+- [x] Tier 1: `cmd/gf-cut/` 作成（go.mod初期化、go.workに追加）。`-d` デリミタ指定 + `-f` フィールド番号指定、stdin対応。テスト作成・通過。テスト結果を `docs/test-results/gf-cut.md` に記録。
 - [ ] Tier 2: `-c` 文字位置指定、フィールド範囲（`1-3`, `2-`）。テスト追加・通過。テスト結果を更新。
 - [ ] Tier 3: `--csv` CSV対応モード（クォート内のデリミタを無視）。テスト追加・通過。テスト結果を更新。
 
