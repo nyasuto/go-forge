@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func buildBinary(t *testing.T) string {
@@ -116,6 +117,120 @@ func TestMatchName(t *testing.T) {
 	}
 }
 
+// Unit tests for parseSizeExpr
+func TestParseSizeExpr(t *testing.T) {
+	tests := []struct {
+		name    string
+		expr    string
+		wantOp  string
+		wantN   int64
+		wantErr bool
+	}{
+		{"bytes", "100c", "=", 100, false},
+		{"kilobytes", "10k", "=", 10240, false},
+		{"megabytes", "2M", "=", 2 * 1024 * 1024, false},
+		{"gigabytes", "1G", "=", 1024 * 1024 * 1024, false},
+		{"blocks default", "10", "=", 5120, false},
+		{"greater than", "+100c", "+", 100, false},
+		{"less than", "-50k", "-", 51200, false},
+		{"empty", "", "", 0, true},
+		{"only sign", "+", "", 0, true},
+		{"only unit", "+c", "", 0, true},
+		{"invalid unit", "10x", "", 0, true},
+		{"not a number", "+abck", "", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			op, n, err := parseSizeExpr(tt.expr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseSizeExpr(%q) error = %v, wantErr %v", tt.expr, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if op != tt.wantOp {
+					t.Errorf("op = %q, want %q", op, tt.wantOp)
+				}
+				if n != tt.wantN {
+					t.Errorf("n = %d, want %d", n, tt.wantN)
+				}
+			}
+		})
+	}
+}
+
+// Unit tests for parseMtimeExpr
+func TestParseMtimeExpr(t *testing.T) {
+	tests := []struct {
+		name    string
+		expr    string
+		wantOp  string
+		wantN   int
+		wantErr bool
+	}{
+		{"exact days", "7", "=", 7, false},
+		{"more than", "+30", "+", 30, false},
+		{"less than", "-1", "-", 1, false},
+		{"zero days", "0", "=", 0, false},
+		{"empty", "", "", 0, true},
+		{"only sign", "+", "", 0, true},
+		{"not a number", "+abc", "", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			op, n, err := parseMtimeExpr(tt.expr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseMtimeExpr(%q) error = %v, wantErr %v", tt.expr, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if op != tt.wantOp {
+					t.Errorf("op = %q, want %q", op, tt.wantOp)
+				}
+				if n != tt.wantN {
+					t.Errorf("n = %d, want %d", n, tt.wantN)
+				}
+			}
+		})
+	}
+}
+
+// Unit tests for matchType
+func TestMatchType(t *testing.T) {
+	root := t.TempDir()
+	f := filepath.Join(root, "test.txt")
+	os.WriteFile(f, []byte("x"), 0644)
+	d := filepath.Join(root, "subdir")
+	os.Mkdir(d, 0755)
+
+	fInfo, _ := os.Stat(f)
+	dInfo, _ := os.Stat(d)
+
+	tests := []struct {
+		name       string
+		fi         os.FileInfo
+		typeFilter string
+		want       bool
+	}{
+		{"empty filter matches file", fInfo, "", true},
+		{"empty filter matches dir", dInfo, "", true},
+		{"f matches file", fInfo, "f", true},
+		{"f rejects dir", dInfo, "f", false},
+		{"d matches dir", dInfo, "d", true},
+		{"d rejects file", fInfo, "d", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchType(tt.fi, tt.typeFilter)
+			if got != tt.want {
+				t.Errorf("matchType(%q, %q) = %v, want %v", tt.fi.Name(), tt.typeFilter, got, tt.want)
+			}
+		})
+	}
+}
+
 // Integration tests
 func TestFindIntegration(t *testing.T) {
 	bin := buildBinary(t)
@@ -172,8 +287,8 @@ func TestFindIntegration(t *testing.T) {
 			wantExit: 0,
 		},
 		{
-			name: "no matches",
-			args: []string{"-name", "*.rs", root},
+			name:     "no matches",
+			args:     []string{"-name", "*.rs", root},
 			wantFiles: nil,
 			wantExit:  0,
 		},
@@ -294,5 +409,309 @@ func TestFindSingleFile(t *testing.T) {
 	}
 	if strings.TrimSpace(stdout) != "" {
 		t.Errorf("expected empty output, got %q", stdout)
+	}
+}
+
+// Integration tests for -type filter
+func TestFindTypeFilter(t *testing.T) {
+	bin := buildBinary(t)
+	root := createTestTree(t)
+
+	t.Run("type f - files only", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "f", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		want := []string{
+			filepath.Join(root, "file1.txt"),
+			filepath.Join(root, "file2.go"),
+			filepath.Join(root, "sub", "deep", "file5.json"),
+			filepath.Join(root, "sub", "deep", "ファイル.txt"),
+			filepath.Join(root, "sub", "file3.txt"),
+			filepath.Join(root, "sub", "file4.go"),
+		}
+		sort.Strings(want)
+		if len(got) != len(want) {
+			t.Errorf("got %d files, want %d\ngot:  %v\nwant: %v", len(got), len(want), got, want)
+			return
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("file[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("type d - directories only", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "d", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		want := []string{
+			root,
+			filepath.Join(root, "sub"),
+			filepath.Join(root, "sub", "deep"),
+		}
+		sort.Strings(want)
+		if len(got) != len(want) {
+			t.Errorf("got %d dirs, want %d\ngot:  %v\nwant: %v", len(got), len(want), got, want)
+			return
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("dir[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("type f with name filter", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "f", "-name", "*.txt", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		want := []string{
+			filepath.Join(root, "file1.txt"),
+			filepath.Join(root, "sub", "deep", "ファイル.txt"),
+			filepath.Join(root, "sub", "file3.txt"),
+		}
+		sort.Strings(want)
+		if len(got) != len(want) {
+			t.Errorf("got %d files, want %d\ngot:  %v\nwant: %v", len(got), len(want), got, want)
+		}
+	})
+
+	t.Run("invalid type value", func(t *testing.T) {
+		_, stderr, exitCode := runFind(t, bin, "-type", "x", root)
+		if exitCode != 2 {
+			t.Errorf("exit code = %d, want 2", exitCode)
+		}
+		if !strings.Contains(stderr, "gf-find:") {
+			t.Errorf("expected error message in stderr, got %q", stderr)
+		}
+	})
+}
+
+// Integration tests for -size filter
+func TestFindSizeFilter(t *testing.T) {
+	bin := buildBinary(t)
+	root := t.TempDir()
+
+	// Create files of different sizes
+	small := filepath.Join(root, "small.txt")
+	os.WriteFile(small, []byte("hi"), 0644) // 2 bytes
+
+	medium := filepath.Join(root, "medium.txt")
+	os.WriteFile(medium, make([]byte, 1024), 0644) // 1024 bytes
+
+	large := filepath.Join(root, "large.txt")
+	os.WriteFile(large, make([]byte, 10240), 0644) // 10240 bytes
+
+	t.Run("size greater than 500c", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "f", "-size", "+500c", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		want := []string{large, medium}
+		sort.Strings(want)
+		if len(got) != len(want) {
+			t.Errorf("got %d files, want %d\ngot:  %v\nwant: %v", len(got), len(want), got, want)
+			return
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("file[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("size less than 100c", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "f", "-size", "-100c", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		if len(got) != 1 || got[0] != small {
+			t.Errorf("got %v, want [%s]", got, small)
+		}
+	})
+
+	t.Run("size exact 1k", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "f", "-size", "1k", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		if len(got) != 1 || got[0] != medium {
+			t.Errorf("got %v, want [%s]", got, medium)
+		}
+	})
+
+	t.Run("size greater than 5k", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "f", "-size", "+5k", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		if len(got) != 1 || got[0] != large {
+			t.Errorf("got %v, want [%s]", got, large)
+		}
+	})
+
+	t.Run("invalid size expression", func(t *testing.T) {
+		_, stderr, exitCode := runFind(t, bin, "-size", "+abck", root)
+		if exitCode != 2 {
+			t.Errorf("exit code = %d, want 2", exitCode)
+		}
+		if !strings.Contains(stderr, "gf-find:") {
+			t.Errorf("expected error in stderr, got %q", stderr)
+		}
+	})
+}
+
+// Integration tests for -mtime filter
+func TestFindMtimeFilter(t *testing.T) {
+	bin := buildBinary(t)
+	root := t.TempDir()
+
+	// Create files with different modification times
+	recent := filepath.Join(root, "recent.txt")
+	os.WriteFile(recent, []byte("new"), 0644) // just created = 0 days old
+
+	old := filepath.Join(root, "old.txt")
+	os.WriteFile(old, []byte("old"), 0644)
+	// Set old.txt to 10 days ago
+	tenDaysAgo := time.Now().Add(-10 * 24 * time.Hour)
+	os.Chtimes(old, tenDaysAgo, tenDaysAgo)
+
+	veryOld := filepath.Join(root, "veryold.txt")
+	os.WriteFile(veryOld, []byte("very old"), 0644)
+	// Set veryold.txt to 60 days ago
+	sixtyDaysAgo := time.Now().Add(-60 * 24 * time.Hour)
+	os.Chtimes(veryOld, sixtyDaysAgo, sixtyDaysAgo)
+
+	t.Run("mtime -5 (modified less than 5 days ago)", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "f", "-mtime", "-5", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		if len(got) != 1 || got[0] != recent {
+			t.Errorf("got %v, want [%s]", got, recent)
+		}
+	})
+
+	t.Run("mtime +7 (modified more than 7 days ago)", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "f", "-mtime", "+7", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		want := []string{old, veryOld}
+		sort.Strings(want)
+		if len(got) != len(want) {
+			t.Errorf("got %d files, want %d\ngot:  %v\nwant: %v", len(got), len(want), got, want)
+			return
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("file[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("mtime +30 (modified more than 30 days ago)", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "f", "-mtime", "+30", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		if len(got) != 1 || got[0] != veryOld {
+			t.Errorf("got %v, want [%s]", got, veryOld)
+		}
+	})
+
+	t.Run("mtime 0 (modified today)", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "f", "-mtime", "0", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		if len(got) != 1 || got[0] != recent {
+			t.Errorf("got %v, want [%s]", got, recent)
+		}
+	})
+
+	t.Run("invalid mtime expression", func(t *testing.T) {
+		_, stderr, exitCode := runFind(t, bin, "-mtime", "abc", root)
+		if exitCode != 2 {
+			t.Errorf("exit code = %d, want 2", exitCode)
+		}
+		if !strings.Contains(stderr, "gf-find:") {
+			t.Errorf("expected error in stderr, got %q", stderr)
+		}
+	})
+}
+
+// Edge case: combined filters
+func TestFindCombinedFilters(t *testing.T) {
+	bin := buildBinary(t)
+	root := t.TempDir()
+
+	// Create structure with varied file types and sizes
+	sub := filepath.Join(root, "src")
+	os.MkdirAll(sub, 0755)
+
+	small := filepath.Join(root, "small.go")
+	os.WriteFile(small, []byte("package main"), 0644) // 12 bytes
+
+	big := filepath.Join(root, "big.txt")
+	os.WriteFile(big, make([]byte, 2048), 0644)
+
+	subFile := filepath.Join(sub, "code.go")
+	os.WriteFile(subFile, make([]byte, 500), 0644)
+
+	t.Run("type f + name *.go + size +100c", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "f", "-name", "*.go", "-size", "+100c", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		if len(got) != 1 || got[0] != subFile {
+			t.Errorf("got %v, want [%s]", got, subFile)
+		}
+	})
+
+	t.Run("type d only", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-type", "d", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		want := []string{root, sub}
+		sort.Strings(want)
+		if len(got) != len(want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+}
+
+// Edge case: empty result with filters
+func TestFindNoMatchWithFilter(t *testing.T) {
+	bin := buildBinary(t)
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "file.txt"), []byte("x"), 0644)
+
+	// type d but only files exist (plus root dir)
+	stdout, _, exitCode := runFind(t, bin, "-type", "f", "-name", "*.go", root)
+	if exitCode != 0 {
+		t.Errorf("exit code = %d, want 0", exitCode)
+	}
+	got := strings.TrimSpace(stdout)
+	if got != "" {
+		t.Errorf("expected empty output, got %q", got)
 	}
 }

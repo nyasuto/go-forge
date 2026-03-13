@@ -124,7 +124,7 @@ goforge/
 #### gf-find（ファイル検索）
 
 - [x] Tier 1: `cmd/gf-find/` 作成（go.mod初期化、go.workに追加）。`-name` パターンによる再帰的ファイル検索。テスト作成・通過。テスト結果を `docs/test-results/gf-find.md` に記録。
-- [ ] Tier 2: `-type f/d`（ファイル/ディレクトリ）、`-size`（サイズ条件）、`-mtime`（更新日条件）。テスト追加・通過。テスト結果を更新。
+- [x] Tier 2: `-type f/d`（ファイル/ディレクトリ）、`-size`（サイズ条件）、`-mtime`（更新日条件）。テスト追加・通過。テスト結果を更新。
 - [ ] Tier 3: `-exec` の安全版（確認プロンプト付き）、glob対応。テスト追加・通過。テスト結果を更新。
 
 #### gf-sort（ソート）

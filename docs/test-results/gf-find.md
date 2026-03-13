@@ -6,35 +6,6 @@
 
 ### テスト結果: ALL PASS
 
-```
-=== RUN   TestMatchName
-=== RUN   TestMatchName/empty_pattern_matches_anything
-=== RUN   TestMatchName/exact_match
-=== RUN   TestMatchName/glob_star
-=== RUN   TestMatchName/glob_no_match
-=== RUN   TestMatchName/question_mark
-=== RUN   TestMatchName/multibyte_name
-=== RUN   TestMatchName/invalid_pattern
---- PASS: TestMatchName (0.00s)
-=== RUN   TestFindIntegration
-=== RUN   TestFindIntegration/all_files_in_tree_(no_-name)
-=== RUN   TestFindIntegration/find_txt_files
-=== RUN   TestFindIntegration/find_go_files
-=== RUN   TestFindIntegration/find_specific_file
-=== RUN   TestFindIntegration/no_matches
-=== RUN   TestFindIntegration/multibyte_filename_match
-=== RUN   TestFindIntegration/nonexistent_path
-=== RUN   TestFindIntegration/multiple_paths
-=== RUN   TestFindIntegration/version_flag
---- PASS: TestFindIntegration (0.52s)
-=== RUN   TestFindEmptyDir
---- PASS: TestFindEmptyDir (0.23s)
-=== RUN   TestFindSingleFile
---- PASS: TestFindSingleFile (0.24s)
-PASS
-ok  	gf-find	1.397s
-```
-
 ### テストケース一覧
 
 | # | テスト名 | 種別 | 結果 |
@@ -61,3 +32,60 @@ ok  	gf-find	1.397s
 - 単体テスト: 7件
 - 統合テスト: 11件
 - 合計: 18件 ALL PASS
+
+## Tier 2: -type f/d、-size、-mtime オプション
+
+### 実行日: 2026-03-14
+
+### テスト結果: ALL PASS
+
+### テストケース一覧
+
+| # | テスト名 | 種別 | 結果 |
+|---|---------|------|------|
+| 19 | ParseSizeExpr/bytes | 正常系 | PASS |
+| 20 | ParseSizeExpr/kilobytes | 正常系 | PASS |
+| 21 | ParseSizeExpr/megabytes | 正常系 | PASS |
+| 22 | ParseSizeExpr/gigabytes | 正常系 | PASS |
+| 23 | ParseSizeExpr/blocks_default | 正常系 | PASS |
+| 24 | ParseSizeExpr/greater_than | 正常系 | PASS |
+| 25 | ParseSizeExpr/less_than | 正常系 | PASS |
+| 26 | ParseSizeExpr/empty | 異常系 | PASS |
+| 27 | ParseSizeExpr/only_sign | 異常系 | PASS |
+| 28 | ParseSizeExpr/only_unit | 異常系 | PASS |
+| 29 | ParseSizeExpr/invalid_unit | 異常系 | PASS |
+| 30 | ParseSizeExpr/not_a_number | 異常系 | PASS |
+| 31 | ParseMtimeExpr/exact_days | 正常系 | PASS |
+| 32 | ParseMtimeExpr/more_than | 正常系 | PASS |
+| 33 | ParseMtimeExpr/less_than | 正常系 | PASS |
+| 34 | ParseMtimeExpr/zero_days | 正常系 | PASS |
+| 35 | ParseMtimeExpr/empty | 異常系 | PASS |
+| 36 | ParseMtimeExpr/only_sign | 異常系 | PASS |
+| 37 | ParseMtimeExpr/not_a_number | 異常系 | PASS |
+| 38 | MatchType/empty_filter_matches_file | 正常系 | PASS |
+| 39 | MatchType/empty_filter_matches_dir | 正常系 | PASS |
+| 40 | MatchType/f_matches_file | 正常系 | PASS |
+| 41 | MatchType/f_rejects_dir | 正常系 | PASS |
+| 42 | MatchType/d_matches_dir | 正常系 | PASS |
+| 43 | MatchType/d_rejects_file | 正常系 | PASS |
+| 44 | TypeFilter/type_f_-_files_only | 正常系 | PASS |
+| 45 | TypeFilter/type_d_-_directories_only | 正常系 | PASS |
+| 46 | TypeFilter/type_f_with_name_filter | 正常系 | PASS |
+| 47 | TypeFilter/invalid_type_value | 異常系 | PASS |
+| 48 | SizeFilter/size_greater_than_500c | 正常系 | PASS |
+| 49 | SizeFilter/size_less_than_100c | 正常系 | PASS |
+| 50 | SizeFilter/size_exact_1k | 正常系 | PASS |
+| 51 | SizeFilter/size_greater_than_5k | 正常系 | PASS |
+| 52 | SizeFilter/invalid_size_expression | 異常系 | PASS |
+| 53 | MtimeFilter/mtime_-5 | 正常系 | PASS |
+| 54 | MtimeFilter/mtime_+7 | 正常系 | PASS |
+| 55 | MtimeFilter/mtime_+30 | 正常系 | PASS |
+| 56 | MtimeFilter/mtime_0 | 正常系 | PASS |
+| 57 | MtimeFilter/invalid_mtime_expression | 異常系 | PASS |
+| 58 | CombinedFilters/type_f_+_name_+_size | 正常系 | PASS |
+| 59 | CombinedFilters/type_d_only | 正常系 | PASS |
+| 60 | NoMatchWithFilter | エッジケース | PASS |
+
+- Tier 2 追加 単体テスト: 25件（parseSizeExpr 12件 + parseMtimeExpr 7件 + matchType 6件）
+- Tier 2 追加 統合テスト: 17件
+- 累計: 60件 ALL PASS

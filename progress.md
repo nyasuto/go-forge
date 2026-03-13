@@ -84,3 +84,7 @@
 ## gf-find Tier 1: コア機能
 - 完了日: 2026-03-14
 - 作業内容: cmd/gf-find/ 作成（go.mod初期化、go.workに追加）。`-name` globパターンによる再帰的ファイル検索、`filepath.Walk`でディレクトリツリー走査、`filepath.Match`でパターンマッチ。パス引数なしの場合はカレントディレクトリ（`.`）をデフォルト使用。複数パス引数対応、単一ファイル引数対応、--version表示、エラーハンドリング（存在しないパス→exit 1）。単体テスト7件+統合テスト11件、全18件PASS。
+
+## gf-find Tier 2: -type f/d、-size、-mtime オプション
+- 完了日: 2026-03-14
+- 作業内容: `-type f/d`（ファイル/ディレクトリフィルタ）、`-size`（サイズ条件: +N/-N/N + c/k/M/G単位、デフォルト512バイトブロック）、`-mtime`（更新日条件: +N日より前/-N日以内/ちょうどN日前）を追加。`findOptions`構造体でオプション管理、`matchEntry`で全フィルタをAND結合。不正な-type値はexit 2、不正な-size/-mtime式もexit 2。単体テスト25件+統合テスト17件追加、累計60件ALL PASS。
