@@ -77,3 +77,45 @@
 - n=1 real echo（実echoで1個ずつ実行）
 - n=2 real echo batches（実echoで2個ずつバッチ）
 - P=2 real parallel echo（実echoで2並列、順序不問で全出力確認）
+
+## Tier 3: -0 null区切り対応・--dry-run コマンド表示
+
+**実行日**: 2026-03-14
+**結果**: ALL PASS (累計69件)
+
+### 追加テスト内訳
+
+#### 単体テスト: readItemsNull (8件)
+- simple null-separated（基本null区切り）
+- no trailing null（末尾nullなし）
+- empty items skipped（空アイテムスキップ）
+- spaces preserved（スペース保持）
+- newlines in items（アイテム内改行保持）
+- empty input（空入力）
+- multibyte（マルチバイト文字）
+- paths with spaces（スペース含むパス）
+
+#### 単体テスト: shellJoin (5件)
+- simple（基本結合）
+- with spaces（スペース含む引数→クォート）
+- with quotes（シングルクォート含む引数→エスケープ）
+- empty arg（空引数→''）
+- special chars（特殊文字含むパス）
+
+#### 単体テスト: runWithNullDelim (3件)
+- null delim basic（-0基本動作、スペース保持）
+- null delim with newlines（-0で改行含むアイテム）
+- null delim with -n（-0と-nの組み合わせ）
+
+#### 単体テスト: runDryRun (5件)
+- dry-run basic（コマンド表示のみ、実行なし）
+- dry-run with -n（バッチ分割表示）
+- dry-run with spaces in args（スペース含む引数のクォート表示）
+- dry-run empty stdin（空入力→出力なし）
+- dry-run with -0（null区切りとの組み合わせ）
+
+#### 統合テスト追加 (4件)
+- null delim real echo（実echoでnull区切り入力）
+- dry-run real（実行環境でdry-run確認）
+- dry-run with n=1（実行環境でバッチ分割dry-run）
+- null delim with -n=1 real（-0と-n=1の組み合わせ実行）

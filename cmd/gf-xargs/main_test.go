@@ -409,6 +409,192 @@ func TestRunWithP(t *testing.T) {
 	})
 }
 
+func TestReadItemsNull(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"simple null-separated", "a\x00b\x00c\x00", []string{"a", "b", "c"}},
+		{"no trailing null", "a\x00b\x00c", []string{"a", "b", "c"}},
+		{"empty items skipped", "a\x00\x00b\x00", []string{"a", "b"}},
+		{"spaces preserved", "hello world\x00foo bar\x00", []string{"hello world", "foo bar"}},
+		{"newlines in items", "line1\nline2\x00line3\x00", []string{"line1\nline2", "line3"}},
+		{"empty input", "", nil},
+		{"multibyte", "日本語\x00テスト\x00", []string{"日本語", "テスト"}},
+		{"paths with spaces", "/path/to/my file.txt\x00/other dir/foo\x00", []string{"/path/to/my file.txt", "/other dir/foo"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := readItemsNull(strings.NewReader(tt.input))
+			if len(got) != len(tt.want) {
+				t.Fatalf("readItemsNull() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestShellJoin(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  string
+		args []string
+		want string
+	}{
+		{"simple", "echo", []string{"hello", "world"}, "echo hello world"},
+		{"with spaces", "echo", []string{"hello world"}, "echo 'hello world'"},
+		{"with quotes", "echo", []string{"it's"}, "echo 'it'\\''s'"},
+		{"empty arg", "echo", []string{""}, "echo ''"},
+		{"special chars", "rm", []string{"-rf", "/tmp/my dir"}, "rm -rf '/tmp/my dir'"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shellJoin(tt.cmd, tt.args)
+			if got != tt.want {
+				t.Errorf("shellJoin() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunWithNullDelim(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		stdin    string
+		wantCode int
+		wantCall *mockCall
+	}{
+		{
+			name:     "null delim basic",
+			args:     []string{"-0", "echo"},
+			stdin:    "hello world\x00foo\x00",
+			wantCode: 0,
+			wantCall: &mockCall{Name: "echo", Args: []string{"hello world", "foo"}},
+		},
+		{
+			name:     "null delim with newlines",
+			args:     []string{"-0", "echo"},
+			stdin:    "line1\nline2\x00line3\x00",
+			wantCode: 0,
+			wantCall: &mockCall{Name: "echo", Args: []string{"line1\nline2", "line3"}},
+		},
+		{
+			name:     "null delim with -n",
+			args:     []string{"-0", "-n", "1", "echo"},
+			stdin:    "a\x00b\x00c\x00",
+			wantCode: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockExecutor{}
+			var stdout, stderr bytes.Buffer
+			code := run(tt.args, strings.NewReader(tt.stdin), &stdout, &stderr, mock)
+
+			if code != tt.wantCode {
+				t.Errorf("exit code = %d, want %d (stderr: %s)", code, tt.wantCode, stderr.String())
+			}
+
+			if tt.wantCall != nil {
+				if len(mock.calls) < 1 {
+					t.Fatalf("expected at least 1 call, got %d", len(mock.calls))
+				}
+				call := mock.calls[0]
+				if call.Name != tt.wantCall.Name {
+					t.Errorf("command = %q, want %q", call.Name, tt.wantCall.Name)
+				}
+				if len(call.Args) != len(tt.wantCall.Args) {
+					t.Fatalf("args = %v, want %v", call.Args, tt.wantCall.Args)
+				}
+				for i := range call.Args {
+					if call.Args[i] != tt.wantCall.Args[i] {
+						t.Errorf("args[%d] = %q, want %q", i, call.Args[i], tt.wantCall.Args[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRunDryRun(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		stdin      string
+		wantCode   int
+		wantOutput string
+		wantCalls  int
+	}{
+		{
+			name:       "dry-run basic",
+			args:       []string{"--dry-run", "rm"},
+			stdin:      "a.txt\nb.txt\n",
+			wantCode:   0,
+			wantOutput: "rm a.txt b.txt\n",
+			wantCalls:  0,
+		},
+		{
+			name:       "dry-run with -n",
+			args:       []string{"--dry-run", "-n", "1", "rm"},
+			stdin:      "a.txt\nb.txt\n",
+			wantCode:   0,
+			wantOutput: "rm a.txt\nrm b.txt\n",
+			wantCalls:  0,
+		},
+		{
+			name:       "dry-run with spaces in args",
+			args:       []string{"--dry-run", "rm"},
+			stdin:      "\"my file.txt\"\n",
+			wantCode:   0,
+			wantOutput: "rm 'my file.txt'\n",
+			wantCalls:  0,
+		},
+		{
+			name:       "dry-run empty stdin",
+			args:       []string{"--dry-run", "echo"},
+			stdin:      "",
+			wantCode:   0,
+			wantOutput: "",
+			wantCalls:  0,
+		},
+		{
+			name:       "dry-run with -0",
+			args:       []string{"--dry-run", "-0", "echo"},
+			stdin:      "hello world\x00foo\x00",
+			wantCode:   0,
+			wantOutput: "echo 'hello world' foo\n",
+			wantCalls:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockExecutor{}
+			var stdout, stderr bytes.Buffer
+			code := run(tt.args, strings.NewReader(tt.stdin), &stdout, &stderr, mock)
+
+			if code != tt.wantCode {
+				t.Errorf("exit code = %d, want %d (stderr: %s)", code, tt.wantCode, stderr.String())
+			}
+			if len(mock.calls) != tt.wantCalls {
+				t.Errorf("calls = %d, want %d (should not execute)", len(mock.calls), tt.wantCalls)
+			}
+			if stdout.String() != tt.wantOutput {
+				t.Errorf("output = %q, want %q", stdout.String(), tt.wantOutput)
+			}
+		})
+	}
+}
+
 // Integration-style tests using real executor
 func TestIntegration(t *testing.T) {
 	t.Run("echo with real executor", func(t *testing.T) {
@@ -519,6 +705,54 @@ func TestIntegration(t *testing.T) {
 	t.Run("n=2 real echo batches", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		code := run([]string{"-n", "2", "echo"}, strings.NewReader("a b c d e\n"), &stdout, &stderr, realExecutor{})
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0", code)
+		}
+		lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+		if len(lines) != 3 {
+			t.Fatalf("lines = %d, want 3: %v", len(lines), lines)
+		}
+	})
+
+	t.Run("null delim real echo", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-0", "echo"}, strings.NewReader("hello world\x00foo bar\x00"), &stdout, &stderr, realExecutor{})
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+		}
+		got := strings.TrimSpace(stdout.String())
+		if got != "hello world foo bar" {
+			t.Errorf("output = %q, want %q", got, "hello world foo bar")
+		}
+	})
+
+	t.Run("dry-run real", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"--dry-run", "rm", "-f"}, strings.NewReader("a.txt\nb.txt\n"), &stdout, &stderr, realExecutor{})
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0", code)
+		}
+		got := strings.TrimSpace(stdout.String())
+		if got != "rm -f a.txt b.txt" {
+			t.Errorf("output = %q, want %q", got, "rm -f a.txt b.txt")
+		}
+	})
+
+	t.Run("dry-run with n=1", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"--dry-run", "-n", "1", "echo"}, strings.NewReader("a b c\n"), &stdout, &stderr, realExecutor{})
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0", code)
+		}
+		lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+		if len(lines) != 3 {
+			t.Fatalf("lines = %d, want 3: %v", len(lines), lines)
+		}
+	})
+
+	t.Run("null delim with -n=1 real", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-0", "-n", "1", "echo"}, strings.NewReader("a\x00b\x00c\x00"), &stdout, &stderr, realExecutor{})
 		if code != 0 {
 			t.Fatalf("exit code = %d, want 0", code)
 		}

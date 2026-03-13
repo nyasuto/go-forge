@@ -148,3 +148,7 @@
 ## gf-xargs Tier 2: -n 最大引数数指定・-P 並列実行数指定
 - 完了日: 2026-03-14
 - 作業内容: `-n`最大引数数指定（`splitBatches`関数でアイテムをN個ずつバッチ分割、各バッチごとにコマンド実行）、`-P`並列実行数指定（`runParallel`関数でセマフォ＋goroutineによる並列実行、出力バッファリングでインターリーブ防止、`sync.Mutex`でスレッドセーフな出力）。`-n`負値→exit 2、`-P`が0以下→exit 2のバリデーション。単体テスト16件（splitBatches 6件、runWithN 5件、runWithP 5件）+統合テスト3件追加、累計48件ALL PASS。
+
+## gf-xargs Tier 3: -0 null区切り対応・--dry-run コマンド表示
+- 完了日: 2026-03-14
+- 作業内容: `-0`null区切り対応（`readItemsNull`関数でnullバイト区切りのカスタムスキャナー、スペース・改行を含むアイテムをそのまま保持）、`--dry-run`コマンド表示（`shellJoin`/`shellQuote`で安全なシェルコマンド文字列を生成、実行せずstdoutに出力）。`-0`と`-n`/`-P`の組み合わせ、`--dry-run`と`-n`/`-0`の組み合わせも全て動作。単体テスト21件（readItemsNull 8件、shellJoin 5件、runWithNullDelim 3件、runDryRun 5件）+統合テスト4件追加、累計69件ALL PASS。

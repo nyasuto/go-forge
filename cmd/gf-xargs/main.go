@@ -38,6 +38,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer, exe
 	showVersion := fs.Bool("version", false, "バージョンを表示")
 	maxArgs := fs.Int("n", 0, "コマンドごとの最大引数数")
 	parallel := fs.Int("P", 1, "並列実行数")
+	nullDelim := fs.Bool("0", false, "null文字区切りで入力を読み取り")
+	dryRun := fs.Bool("dry-run", false, "コマンドを実行せず表示のみ")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -61,7 +63,12 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer, exe
 	cmdArgs := fs.Args()
 
 	// Read stdin lines into items.
-	items := readItems(stdin)
+	var items []string
+	if *nullDelim {
+		items = readItemsNull(stdin)
+	} else {
+		items = readItems(stdin)
+	}
 
 	if len(items) == 0 {
 		return 0
@@ -77,6 +84,16 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer, exe
 
 	// Split items into batches based on -n flag.
 	batches := splitBatches(items, *maxArgs)
+
+	if *dryRun {
+		for _, batch := range batches {
+			fullArgs := make([]string, 0, len(cmdExtraArgs)+len(batch))
+			fullArgs = append(fullArgs, cmdExtraArgs...)
+			fullArgs = append(fullArgs, batch...)
+			fmt.Fprintln(stdout, shellJoin(cmdName, fullArgs))
+		}
+		return 0
+	}
 
 	if *parallel <= 1 {
 		// Sequential execution.
@@ -153,6 +170,61 @@ func runParallel(batches [][]string, cmdName string, cmdExtraArgs []string, maxP
 	}
 	wg.Wait()
 	return exitCode
+}
+
+// readItemsNull reads null-byte delimited items from stdin.
+func readItemsNull(r io.Reader) []string {
+	var items []string
+	scanner := bufio.NewScanner(r)
+	scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		if atEOF && len(data) == 0 {
+			return 0, nil, nil
+		}
+		if i := bytes.IndexByte(data, 0); i >= 0 {
+			return i + 1, data[:i], nil
+		}
+		if atEOF {
+			return len(data), data, nil
+		}
+		return 0, nil, nil
+	})
+	for scanner.Scan() {
+		item := scanner.Text()
+		if item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+// shellJoin formats a command and its args as a shell command string.
+// Arguments containing spaces or special characters are single-quoted.
+func shellJoin(name string, args []string) string {
+	parts := make([]string, 0, 1+len(args))
+	parts = append(parts, shellQuote(name))
+	for _, a := range args {
+		parts = append(parts, shellQuote(a))
+	}
+	return strings.Join(parts, " ")
+}
+
+// shellQuote returns a shell-safe representation of s.
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	safe := true
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '.' || c == '/' || c == ':' || c == '=' || c == '+' || c == ',') {
+			safe = false
+			break
+		}
+	}
+	if safe {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 // readItems reads whitespace-delimited tokens from stdin,
