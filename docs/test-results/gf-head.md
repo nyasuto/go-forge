@@ -55,3 +55,30 @@
 | 2 | -c bytes from file | 正常系 | PASS |
 | 3 | -c with multiple files | 正常系 | PASS |
 | 4 | -c more bytes than file | エッジケース | PASS |
+
+## Tier 3: ストリーミングモード
+
+### 実行日: 2026-03-14
+
+### 単体テスト (TestHeadStreaming): 8件 全PASS
+
+| # | テストケース | 種別 | 結果 |
+|---|-------------|------|------|
+| 1 | single batch exactly n lines | 正常系 | PASS |
+| 2 | two batches | 正常系 | PASS |
+| 3 | three batches with remainder | 正常系 | PASS |
+| 4 | n=1 each line is a batch | 正常系 | PASS |
+| 5 | n=0 outputs nothing | 異常系 | PASS |
+| 6 | empty input | エッジケース | PASS |
+| 7 | multibyte streaming | エッジケース | PASS |
+| 8 | fewer lines than n | エッジケース | PASS |
+
+### 統合テスト (TestIntegration Tier 3): 5件 全PASS
+
+| # | テストケース | 種別 | 結果 |
+|---|-------------|------|------|
+| 1 | -F streaming mode | 正常系 | PASS |
+| 2 | -F with -c errors | 異常系 | PASS |
+| 3 | -F with file argument errors | 異常系 | PASS |
+| 4 | -F single line batches | 正常系 | PASS |
+| 5 | -F empty stdin | エッジケース | PASS |

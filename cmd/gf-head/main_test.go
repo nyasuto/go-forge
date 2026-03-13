@@ -160,6 +160,81 @@ func TestHeadBytes(t *testing.T) {
 	}
 }
 
+func TestHeadStreaming(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		n     int
+		want  string
+	}{
+		// 正常系
+		{
+			name:  "single batch exactly n lines",
+			input: "a\nb\nc\n",
+			n:     3,
+			want:  "a\nb\nc\n",
+		},
+		{
+			name:  "two batches",
+			input: "1\n2\n3\n4\n",
+			n:     2,
+			want:  "1\n2\n\033[2J\033[H3\n4\n",
+		},
+		{
+			name:  "three batches with remainder",
+			input: "a\nb\nc\nd\ne\n",
+			n:     2,
+			want:  "a\nb\n\033[2J\033[Hc\nd\n\033[2J\033[He\n",
+		},
+		{
+			name:  "n=1 each line is a batch",
+			input: "x\ny\nz\n",
+			n:     1,
+			want:  "x\n\033[2J\033[Hy\n\033[2J\033[Hz\n",
+		},
+		// 異常系
+		{
+			name:  "n=0 outputs nothing",
+			input: "hello\nworld\n",
+			n:     0,
+			want:  "",
+		},
+		// エッジケース
+		{
+			name:  "empty input",
+			input: "",
+			n:     5,
+			want:  "",
+		},
+		{
+			name:  "multibyte streaming",
+			input: "あ\nい\nう\nえ\n",
+			n:     2,
+			want:  "あ\nい\n\033[2J\033[Hう\nえ\n",
+		},
+		{
+			name:  "fewer lines than n",
+			input: "one\ntwo\n",
+			n:     5,
+			want:  "one\ntwo\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := strings.NewReader(tt.input)
+			var buf bytes.Buffer
+			err := headStreaming(r, &buf, tt.n)
+			if err != nil {
+				t.Fatalf("headStreaming() error = %v", err)
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("headStreaming() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // --- Integration Tests ---
 
 func buildBinary(t *testing.T) string {
@@ -342,6 +417,79 @@ func TestIntegration(t *testing.T) {
 		want := fmt.Sprintf("==> %s <==\nAAA\n==> %s <==\nCCC", f1, f2)
 		if string(out) != want {
 			t.Errorf("got %q, want %q", string(out), want)
+		}
+	})
+
+	// Tier 3: -F ストリーミングモード
+	t.Run("-F streaming mode", func(t *testing.T) {
+		cmd := exec.Command(bin, "-F", "-n", "2")
+		cmd.Stdin = strings.NewReader("a\nb\nc\nd\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := "a\nb\n\033[2J\033[Hc\nd\n"
+		if string(out) != want {
+			t.Errorf("got %q, want %q", string(out), want)
+		}
+	})
+
+	t.Run("-F with -c errors", func(t *testing.T) {
+		cmd := exec.Command(bin, "-F", "-c", "5")
+		cmd.Stdin = strings.NewReader("hello")
+		err := cmd.Run()
+		if err == nil {
+			t.Fatal("expected error for -F with -c")
+		}
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("expected ExitError, got %T", err)
+		}
+		if exitErr.ExitCode() != 2 {
+			t.Errorf("exit code = %d, want 2", exitErr.ExitCode())
+		}
+	})
+
+	t.Run("-F with file argument errors", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "test.txt")
+		os.WriteFile(tmpFile, []byte("data"), 0644)
+
+		cmd := exec.Command(bin, "-F", tmpFile)
+		err := cmd.Run()
+		if err == nil {
+			t.Fatal("expected error for -F with file argument")
+		}
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("expected ExitError, got %T", err)
+		}
+		if exitErr.ExitCode() != 2 {
+			t.Errorf("exit code = %d, want 2", exitErr.ExitCode())
+		}
+	})
+
+	t.Run("-F single line batches", func(t *testing.T) {
+		cmd := exec.Command(bin, "-F", "-n", "1")
+		cmd.Stdin = strings.NewReader("x\ny\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := "x\n\033[2J\033[Hy\n"
+		if string(out) != want {
+			t.Errorf("got %q, want %q", string(out), want)
+		}
+	})
+
+	t.Run("-F empty stdin", func(t *testing.T) {
+		cmd := exec.Command(bin, "-F", "-n", "3")
+		cmd.Stdin = strings.NewReader("")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(out) != "" {
+			t.Errorf("expected empty output, got %q", string(out))
 		}
 	})
 
