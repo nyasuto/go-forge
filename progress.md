@@ -140,3 +140,7 @@
 ## gf-sed Tier 3: マルチバイト安全な置換（rune単位処理）
 - 完了日: 2026-03-14
 - 作業内容: 式パーサーをrune単位処理に全面改修。`splitByDelim`を`byte`から`rune`ベースに変更し、マルチバイトデリミタ（★、🔥等）に対応。`parseExpression`で`utf8.DecodeRuneInString`によるデリミタ抽出。`findClosingSlash`もrune単位走査に変更。`parseAddress`の先頭文字判定もrune安全に。CJK文字・絵文字（4バイト）・全角数字・結合文字・ゼロ幅文字のパターンマッチ＋置換テスト、マルチバイトデリミタテスト、in-placeマルチバイトテストを追加。単体テスト19件追加、累計81件ALL PASS。
+
+## gf-xargs Tier 1: コア機能
+- 完了日: 2026-03-14
+- 作業内容: cmd/gf-xargs/ 作成（go.mod初期化、go.workに追加）。stdinから行を読み取り、ホワイトスペースでトークン分割し、指定コマンドの引数として実行。コマンド未指定時はecho。シングル/ダブルクォート対応（クォート内スペース保持）。--version表示、エラーハンドリング（コマンド失敗→exit 1、不正フラグ→exit 2、空stdin→実行なし）。commandExecutorインターフェースでテスタビリティ確保。単体テスト17件+エッジケース4件+統合テスト9件、全30件PASS。

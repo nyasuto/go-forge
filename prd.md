@@ -300,7 +300,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 #### gf-xargs（引数構築・実行）
 
-- [ ] Tier 1: `cmd/gf-xargs/` 作成（go.mod初期化、go.workに追加）。stdinから読み取った値を引数としてコマンド実行。テスト作成・通過。テスト結果を `docs/test-results/gf-xargs.md` に記録。
+- [x] Tier 1: `cmd/gf-xargs/` 作成（go.mod初期化、go.workに追加）。stdinから読み取った値を引数としてコマンド実行。テスト作成・通過。テスト結果を `docs/test-results/gf-xargs.md` に記録。
 - [ ] Tier 2: `-n` 最大引数数指定、`-P` 並列実行数指定。テスト追加・通過。テスト結果を更新。
 - [ ] Tier 3: `-0` null区切り対応、`--dry-run` 実行せずコマンドを表示。テスト追加・通過。テスト結果を更新。
 

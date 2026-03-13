@@ -12,4 +12,5 @@ use (
 	./cmd/gf-uniq
 	./cmd/gf-cut
 	./cmd/gf-sed
+	./cmd/gf-xargs
 )
