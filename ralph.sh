@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 無限ループやAPI課金の暴走を防ぐための上限回数
-MAX_LOOPS=10
+MAX_LOOPS=20
 
 for ((i=1; i<=MAX_LOOPS; i++)); do
     # 全タスク完了チェック: prd.mdに未完了タスク [ ] が残っていなければ終了

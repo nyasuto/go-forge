@@ -1,3 +1,6 @@
 go 1.25.0
 
-use ./cmd/gf-cat
+use (
+	./cmd/gf-cat
+	./cmd/gf-head
+)
