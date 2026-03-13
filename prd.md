@@ -95,7 +95,7 @@ goforge/
 
 #### gf-tail（末尾表示）
 
-- [ ] Tier 1: `cmd/gf-tail/` 作成（go.mod初期化、go.workに追加）。デフォルト10行表示、`-n` 行数指定、stdin対応。テスト作成・通過。テスト結果を `docs/test-results/gf-tail.md` に記録。
+- [x] Tier 1: `cmd/gf-tail/` 作成（go.mod初期化、go.workに追加）。デフォルト10行表示、`-n` 行数指定、stdin対応。テスト作成・通過。テスト結果を `docs/test-results/gf-tail.md` に記録。
 - [ ] Tier 2: `-f` フォローモード（ファイル追記の監視）。テスト追加・通過。テスト結果を更新。
 - [ ] Tier 3: `-f` + `-p パターン` でマッチ行をハイライト表示。テスト追加・通過。テスト結果を更新。
 
