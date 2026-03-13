@@ -10,8 +10,17 @@ import (
 
 const version = "0.1.0"
 
+type options struct {
+	number   bool
+	squeeze  bool
+	lineNum  int
+	lastBlank bool
+}
+
 func main() {
 	showVersion := flag.Bool("version", false, "バージョンを表示")
+	numberLines := flag.Bool("n", false, "行番号を表示")
+	squeezeBlank := flag.Bool("s", false, "連続する空行を1行に圧縮")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-cat [OPTIONS] [FILE]...\n\nファイルを連結して標準出力に表示する。\n\nOptions:\n")
 		flag.PrintDefaults()
@@ -23,11 +32,16 @@ func main() {
 		os.Exit(0)
 	}
 
+	opts := &options{
+		number:  *numberLines,
+		squeeze: *squeezeBlank,
+	}
+
 	args := flag.Args()
 	exitCode := 0
 
 	if len(args) == 0 {
-		if err := cat(os.Stdin, os.Stdout); err != nil {
+		if err := cat(os.Stdin, os.Stdout, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "gf-cat: %v\n", err)
 			os.Exit(1)
 		}
@@ -36,7 +50,7 @@ func main() {
 
 	for _, arg := range args {
 		if arg == "-" {
-			if err := cat(os.Stdin, os.Stdout); err != nil {
+			if err := cat(os.Stdin, os.Stdout, opts); err != nil {
 				fmt.Fprintf(os.Stderr, "gf-cat: %v\n", err)
 				exitCode = 1
 			}
@@ -49,7 +63,7 @@ func main() {
 			exitCode = 1
 			continue
 		}
-		if err := cat(f, os.Stdout); err != nil {
+		if err := cat(f, os.Stdout, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "gf-cat: %v\n", err)
 			exitCode = 1
 		}
@@ -59,10 +73,38 @@ func main() {
 	os.Exit(exitCode)
 }
 
-func cat(r io.Reader, w io.Writer) error {
+func cat(r io.Reader, w io.Writer, opts *options) error {
+	if !opts.number && !opts.squeeze {
+		bw := bufio.NewWriter(w)
+		_, err := io.Copy(bw, r)
+		if err != nil {
+			return err
+		}
+		return bw.Flush()
+	}
+
 	bw := bufio.NewWriter(w)
-	_, err := io.Copy(bw, r)
-	if err != nil {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		isBlank := line == ""
+
+		if opts.squeeze && isBlank && opts.lastBlank {
+			continue
+		}
+		opts.lastBlank = isBlank
+
+		opts.lineNum++
+		if opts.number {
+			fmt.Fprintf(bw, "%6d\t%s\n", opts.lineNum, line)
+		} else {
+			fmt.Fprintf(bw, "%s\n", line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
 		return err
 	}
 	return bw.Flush()

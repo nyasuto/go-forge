@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// cat関数の単体テスト
+// cat関数の単体テスト（Tier 1: 基本機能）
 func TestCat(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -60,9 +60,157 @@ func TestCat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := strings.NewReader(tt.input)
 			var buf bytes.Buffer
-			err := cat(r, &buf)
+			opts := &options{}
+			err := cat(r, &buf, opts)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("cat() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("cat() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// cat関数の単体テスト（Tier 2: -n 行番号表示）
+func TestCatNumberLines(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		// 正常系
+		{
+			name:  "単一行に行番号",
+			input: "hello\n",
+			want:  "     1\thello\n",
+		},
+		{
+			name:  "複数行に行番号",
+			input: "line1\nline2\nline3\n",
+			want:  "     1\tline1\n     2\tline2\n     3\tline3\n",
+		},
+		{
+			name:  "空行にも行番号",
+			input: "a\n\nb\n",
+			want:  "     1\ta\n     2\t\n     3\tb\n",
+		},
+		// エッジケース
+		{
+			name:  "空入力",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "マルチバイト文字に行番号",
+			input: "日本語\n世界\n",
+			want:  "     1\t日本語\n     2\t世界\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := strings.NewReader(tt.input)
+			var buf bytes.Buffer
+			opts := &options{number: true}
+			err := cat(r, &buf, opts)
+			if err != nil {
+				t.Errorf("cat() error = %v", err)
+				return
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("cat() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// cat関数の単体テスト（Tier 2: -s 連続空行圧縮）
+func TestCatSqueezeBlank(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		// 正常系
+		{
+			name:  "連続空行を圧縮",
+			input: "a\n\n\n\nb\n",
+			want:  "a\n\nb\n",
+		},
+		{
+			name:  "空行なしはそのまま",
+			input: "a\nb\nc\n",
+			want:  "a\nb\nc\n",
+		},
+		{
+			name:  "先頭の連続空行を圧縮",
+			input: "\n\n\na\n",
+			want:  "\na\n",
+		},
+		// エッジケース
+		{
+			name:  "空入力",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "全て空行",
+			input: "\n\n\n\n",
+			want:  "\n",
+		},
+		{
+			name:  "空行1行はそのまま",
+			input: "a\n\nb\n",
+			want:  "a\n\nb\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := strings.NewReader(tt.input)
+			var buf bytes.Buffer
+			opts := &options{squeeze: true}
+			err := cat(r, &buf, opts)
+			if err != nil {
+				t.Errorf("cat() error = %v", err)
+				return
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("cat() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// cat関数の単体テスト（Tier 2: -n と -s の組み合わせ）
+func TestCatNumberAndSqueeze(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "行番号+圧縮の組み合わせ",
+			input: "a\n\n\n\nb\n",
+			want:  "     1\ta\n     2\t\n     3\tb\n",
+		},
+		{
+			name:  "圧縮後の行番号は連番",
+			input: "x\n\n\ny\n\n\nz\n",
+			want:  "     1\tx\n     2\t\n     3\ty\n     4\t\n     5\tz\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := strings.NewReader(tt.input)
+			var buf bytes.Buffer
+			opts := &options{number: true, squeeze: true}
+			err := cat(r, &buf, opts)
+			if err != nil {
+				t.Errorf("cat() error = %v", err)
 				return
 			}
 			if got := buf.String(); got != tt.want {
@@ -79,8 +227,10 @@ func TestCatFile(t *testing.T) {
 
 	file1 := filepath.Join(dir, "file1.txt")
 	file2 := filepath.Join(dir, "file2.txt")
+	fileBlank := filepath.Join(dir, "blank.txt")
 	os.WriteFile(file1, []byte("content of file1\n"), 0644)
 	os.WriteFile(file2, []byte("content of file2\n"), 0644)
+	os.WriteFile(fileBlank, []byte("a\n\n\n\nb\n"), 0644)
 
 	// バイナリをビルド
 	binary := filepath.Join(dir, "gf-cat")
@@ -97,7 +247,7 @@ func TestCatFile(t *testing.T) {
 		want     string
 		wantExit int
 	}{
-		// 正常系
+		// 正常系（Tier 1）
 		{
 			name: "単一ファイル",
 			args: []string{file1},
@@ -143,6 +293,29 @@ func TestCatFile(t *testing.T) {
 			name: "バージョン表示",
 			args: []string{"-version"},
 			want: "gf-cat version 0.1.0\n",
+		},
+		// Tier 2: -n 行番号表示
+		{
+			name: "-nで行番号表示",
+			args: []string{"-n", file1},
+			want: "     1\tcontent of file1\n",
+		},
+		{
+			name: "-nで複数ファイル連番",
+			args: []string{"-n", file1, file2},
+			want: "     1\tcontent of file1\n     2\tcontent of file2\n",
+		},
+		// Tier 2: -s 連続空行圧縮
+		{
+			name: "-sで連続空行圧縮",
+			args: []string{"-s", fileBlank},
+			want: "a\n\nb\n",
+		},
+		// Tier 2: -n と -s の組み合わせ
+		{
+			name: "-n -sの組み合わせ",
+			args: []string{"-n", "-s", fileBlank},
+			want: "     1\ta\n     2\t\n     3\tb\n",
 		},
 	}
 
