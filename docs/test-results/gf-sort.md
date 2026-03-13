@@ -78,3 +78,31 @@
 | Tier2Options/all_options_combined_-k_2_-n_-r_-u | 全オプション組み合わせ | PASS |
 | Tier2Options/empty_input_with_options | 空入力+オプション | PASS |
 | Tier2Options/multibyte_with_reverse | マルチバイト逆順ソート | PASS |
+
+## Tier 3: -t デリミタ指定
+
+### 実行日: 2026-03-14
+
+### テスト結果: ALL PASS (14件追加、累計58件)
+
+#### 単体テスト (7件追加)
+| テスト名 | 内容 | 結果 |
+|----------|------|------|
+| ExtractKey/comma_delimiter_field_1 | カンマ区切りフィールド1 | PASS |
+| ExtractKey/comma_delimiter_field_2 | カンマ区切りフィールド2 | PASS |
+| ExtractKey/colon_delimiter | コロン区切り | PASS |
+| ExtractKey/tab_delimiter | タブ区切り | PASS |
+| ExtractKey/delimiter_field_out_of_range | デリミタ指定で範囲外→空文字 | PASS |
+| ExtractKey/delimiter_with_empty_fields | デリミタ指定で空フィールド | PASS |
+| ExtractKey/pipe_delimiter | パイプ区切り | PASS |
+
+#### 統合テスト (7件追加)
+| テスト名 | 内容 | 結果 |
+|----------|------|------|
+| Tier2Options/delimiter_-t_comma_with_-k | カンマ区切り+キー指定 | PASS |
+| Tier2Options/delimiter_-t_colon_with_-k_-n | コロン区切り+数値ソート | PASS |
+| Tier2Options/delimiter_-t_pipe_with_-k_-r | パイプ区切り+逆順 | PASS |
+| Tier2Options/delimiter_-t_tab_with_-k | タブ区切り+キー指定 | PASS |
+| Tier2Options/delimiter_-t_with_-k_-u | デリミタ+重複除去 | PASS |
+| Tier2Options/delimiter_-t_with_empty_fields | 空フィールド含むデリミタ指定 | PASS |
+| Tier2Options/delimiter_-t_without_-k_sorts_whole_line | -tのみ指定（-kなし）→行全体ソート | PASS |

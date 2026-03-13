@@ -14,10 +14,11 @@ import (
 const version = "0.1.0"
 
 type sortOptions struct {
-	numeric bool
-	reverse bool
-	unique  bool
-	keyField int // 1-based, 0 means no key
+	numeric   bool
+	reverse   bool
+	unique    bool
+	keyField  int    // 1-based, 0 means no key
+	delimiter string // field delimiter (empty means whitespace)
 }
 
 func main() {
@@ -26,6 +27,7 @@ func main() {
 	reverse := flag.Bool("r", false, "reverse sort order")
 	unique := flag.Bool("u", false, "output only unique lines")
 	keyField := flag.Int("k", 0, "sort by field number (1-based)")
+	delimiter := flag.String("t", "", "field delimiter (default: whitespace)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-sort [OPTIONS] [FILE...]\n")
 		fmt.Fprintf(os.Stderr, "Sort lines of text.\n\n")
@@ -44,10 +46,11 @@ func main() {
 	}
 
 	opts := sortOptions{
-		numeric:  *numeric,
-		reverse:  *reverse,
-		unique:   *unique,
-		keyField: *keyField,
+		numeric:   *numeric,
+		reverse:   *reverse,
+		unique:    *unique,
+		keyField:  *keyField,
+		delimiter: *delimiter,
 	}
 
 	args := flag.Args()
@@ -71,11 +74,16 @@ func main() {
 }
 
 // extractKey returns the sort key for a line based on options.
-func extractKey(line string, keyField int) string {
+func extractKey(line string, keyField int, delimiter string) string {
 	if keyField <= 0 {
 		return line
 	}
-	fields := strings.Fields(line)
+	var fields []string
+	if delimiter == "" {
+		fields = strings.Fields(line)
+	} else {
+		fields = strings.Split(line, delimiter)
+	}
 	if keyField > len(fields) {
 		return ""
 	}
@@ -94,8 +102,8 @@ func parseNumber(s string) float64 {
 
 func sortLines(lines []string, opts sortOptions) {
 	sort.SliceStable(lines, func(i, j int) bool {
-		ki := extractKey(lines[i], opts.keyField)
-		kj := extractKey(lines[j], opts.keyField)
+		ki := extractKey(lines[i], opts.keyField, opts.delimiter)
+		kj := extractKey(lines[j], opts.keyField, opts.delimiter)
 
 		var less bool
 		if opts.numeric {

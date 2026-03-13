@@ -87,22 +87,30 @@ func TestUnit_ReadLinesFrom(t *testing.T) {
 
 func TestUnit_ExtractKey(t *testing.T) {
 	tests := []struct {
-		name     string
-		line     string
-		keyField int
-		want     string
+		name      string
+		line      string
+		keyField  int
+		delimiter string
+		want      string
 	}{
-		{"no key field", "hello world", 0, "hello world"},
-		{"field 1", "banana apple cherry", 1, "banana"},
-		{"field 2", "banana apple cherry", 2, "apple"},
-		{"field 3", "banana apple cherry", 3, "cherry"},
-		{"field out of range", "banana apple", 5, ""},
-		{"multiple spaces", "  foo   bar  ", 1, "foo"},
-		{"tabs", "foo\tbar\tbaz", 2, "bar"},
+		{"no key field", "hello world", 0, "", "hello world"},
+		{"field 1", "banana apple cherry", 1, "", "banana"},
+		{"field 2", "banana apple cherry", 2, "", "apple"},
+		{"field 3", "banana apple cherry", 3, "", "cherry"},
+		{"field out of range", "banana apple", 5, "", ""},
+		{"multiple spaces", "  foo   bar  ", 1, "", "foo"},
+		{"tabs", "foo\tbar\tbaz", 2, "", "bar"},
+		{"comma delimiter field 1", "banana,apple,cherry", 1, ",", "banana"},
+		{"comma delimiter field 2", "banana,apple,cherry", 2, ",", "apple"},
+		{"colon delimiter", "root:0:admin", 2, ":", "0"},
+		{"tab delimiter", "foo\tbar\tbaz", 2, "\t", "bar"},
+		{"delimiter field out of range", "a,b", 5, ",", ""},
+		{"delimiter with empty fields", "a,,c", 2, ",", ""},
+		{"pipe delimiter", "x|y|z", 3, "|", "z"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractKey(tt.line, tt.keyField)
+			got := extractKey(tt.line, tt.keyField, tt.delimiter)
 			if got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
@@ -402,6 +410,48 @@ func TestIntegration_Tier2Options(t *testing.T) {
 			stdin:   "みかん\nりんご\nばなな\n",
 			args:    []string{"-r"},
 			wantOut: "りんご\nみかん\nばなな\n",
+		},
+		{
+			name:    "delimiter -t comma with -k",
+			stdin:   "cherry,3\napple,1\nbanana,2\n",
+			args:    []string{"-t", ",", "-k", "2"},
+			wantOut: "apple,1\nbanana,2\ncherry,3\n",
+		},
+		{
+			name:    "delimiter -t colon with -k -n",
+			stdin:   "user:100\nadmin:1\nguest:50\n",
+			args:    []string{"-t", ":", "-k", "2", "-n"},
+			wantOut: "admin:1\nguest:50\nuser:100\n",
+		},
+		{
+			name:    "delimiter -t pipe with -k -r",
+			stdin:   "a|x\nb|y\nc|z\n",
+			args:    []string{"-t", "|", "-k", "2", "-r"},
+			wantOut: "c|z\nb|y\na|x\n",
+		},
+		{
+			name:    "delimiter -t tab with -k",
+			stdin:   "cherry\t3\napple\t1\nbanana\t2\n",
+			args:    []string{"-t", "\t", "-k", "1"},
+			wantOut: "apple\t1\nbanana\t2\ncherry\t3\n",
+		},
+		{
+			name:    "delimiter -t with -k -u",
+			stdin:   "a,2\nb,1\na,2\nb,1\n",
+			args:    []string{"-t", ",", "-k", "2", "-n", "-u"},
+			wantOut: "b,1\na,2\n",
+		},
+		{
+			name:    "delimiter -t with empty fields",
+			stdin:   "x,,3\ny,,1\nz,,2\n",
+			args:    []string{"-t", ",", "-k", "3", "-n"},
+			wantOut: "y,,1\nz,,2\nx,,3\n",
+		},
+		{
+			name:    "delimiter -t without -k sorts whole line",
+			stdin:   "banana\napple\ncherry\n",
+			args:    []string{"-t", ","},
+			wantOut: "apple\nbanana\ncherry\n",
 		},
 	}
 
