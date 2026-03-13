@@ -13,6 +13,7 @@ const version = "0.1.0"
 func main() {
 	showVersion := flag.Bool("version", false, "バージョンを表示")
 	numLines := flag.Int("n", 10, "表示する行数")
+	numBytes := flag.Int("c", 0, "表示するバイト数")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-head [OPTIONS] [FILE]...\n\nファイルの先頭部分を表示する。\n\nOptions:\n")
 		flag.PrintDefaults()
@@ -24,16 +25,28 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *numLines < 0 {
+	byteMode := *numBytes > 0
+	if !byteMode && *numLines < 0 {
 		fmt.Fprintf(os.Stderr, "gf-head: invalid number of lines: '%d'\n", *numLines)
+		os.Exit(2)
+	}
+	if *numBytes < 0 {
+		fmt.Fprintf(os.Stderr, "gf-head: invalid number of bytes: '%d'\n", *numBytes)
 		os.Exit(2)
 	}
 
 	args := flag.Args()
 	exitCode := 0
 
+	process := func(r io.Reader, w io.Writer) error {
+		if byteMode {
+			return headBytes(r, w, *numBytes)
+		}
+		return head(r, w, *numLines)
+	}
+
 	if len(args) == 0 {
-		if err := head(os.Stdin, os.Stdout, *numLines); err != nil {
+		if err := process(os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintf(os.Stderr, "gf-head: %v\n", err)
 			os.Exit(1)
 		}
@@ -62,13 +75,24 @@ func main() {
 			fmt.Fprintf(os.Stdout, "==> %s <==\n", arg)
 		}
 
-		if err := head(r, os.Stdout, *numLines); err != nil {
+		if err := process(r, os.Stdout); err != nil {
 			fmt.Fprintf(os.Stderr, "gf-head: %v\n", err)
 			exitCode = 1
 		}
 	}
 
 	os.Exit(exitCode)
+}
+
+func headBytes(r io.Reader, w io.Writer, n int) error {
+	if n == 0 {
+		return nil
+	}
+	_, err := io.CopyN(w, r, int64(n))
+	if err == io.EOF {
+		return nil
+	}
+	return err
 }
 
 func head(r io.Reader, w io.Writer, n int) error {

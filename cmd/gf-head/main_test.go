@@ -91,6 +91,75 @@ func TestHead(t *testing.T) {
 	}
 }
 
+func TestHeadBytes(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		n       int
+		want    string
+		wantErr bool
+	}{
+		// 正常系
+		{
+			name:  "first 5 bytes",
+			input: "Hello, World!\n",
+			n:     5,
+			want:  "Hello",
+		},
+		{
+			name:  "more bytes than input",
+			input: "abc",
+			n:     100,
+			want:  "abc",
+		},
+		{
+			name:  "exact length",
+			input: "12345",
+			n:     5,
+			want:  "12345",
+		},
+		// エッジケース
+		{
+			name:  "zero bytes",
+			input: "hello",
+			n:     0,
+			want:  "",
+		},
+		{
+			name:  "empty input",
+			input: "",
+			n:     10,
+			want:  "",
+		},
+		{
+			name:  "multibyte characters truncated at byte boundary",
+			input: "あいう",
+			n:     4,
+			want:  "あ" + string([]byte("い")[:1]),
+		},
+		{
+			name:  "newlines counted as bytes",
+			input: "a\nb\nc\n",
+			n:     3,
+			want:  "a\nb",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := strings.NewReader(tt.input)
+			var buf bytes.Buffer
+			err := headBytes(r, &buf, tt.n)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("headBytes() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got := buf.String(); got != tt.want {
+				t.Errorf("headBytes() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // --- Integration Tests ---
 
 func buildBinary(t *testing.T) string {
@@ -228,6 +297,65 @@ func TestIntegration(t *testing.T) {
 		}
 		if string(out) != "piped\n" {
 			t.Errorf("got %q, want %q", string(out), "piped\n")
+		}
+	})
+
+	// Tier 2: -c バイト数指定
+	t.Run("-c bytes from stdin", func(t *testing.T) {
+		cmd := exec.Command(bin, "-c", "5")
+		cmd.Stdin = strings.NewReader("Hello, World!\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(out) != "Hello" {
+			t.Errorf("got %q, want %q", string(out), "Hello")
+		}
+	})
+
+	t.Run("-c bytes from file", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "test.txt")
+		os.WriteFile(tmpFile, []byte("abcdefghij"), 0644)
+
+		cmd := exec.Command(bin, "-c", "3", tmpFile)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(out) != "abc" {
+			t.Errorf("got %q, want %q", string(out), "abc")
+		}
+	})
+
+	t.Run("-c with multiple files", func(t *testing.T) {
+		dir := t.TempDir()
+		f1 := filepath.Join(dir, "a.txt")
+		f2 := filepath.Join(dir, "b.txt")
+		os.WriteFile(f1, []byte("AAABBB"), 0644)
+		os.WriteFile(f2, []byte("CCCDDD"), 0644)
+
+		cmd := exec.Command(bin, "-c", "3", f1, f2)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := fmt.Sprintf("==> %s <==\nAAA\n==> %s <==\nCCC", f1, f2)
+		if string(out) != want {
+			t.Errorf("got %q, want %q", string(out), want)
+		}
+	})
+
+	t.Run("-c more bytes than file", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "small.txt")
+		os.WriteFile(tmpFile, []byte("hi"), 0644)
+
+		cmd := exec.Command(bin, "-c", "100", tmpFile)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(out) != "hi" {
+			t.Errorf("got %q, want %q", string(out), "hi")
 		}
 	})
 }
