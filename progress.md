@@ -56,3 +56,7 @@
 ## gf-wc Tier 3: --json JSON形式出力
 - 完了日: 2026-03-14
 - 作業内容: `--json` フラグ追加。`encoding/json`による構造化JSON出力。単一ファイル/stdinの場合は`{lines, words, bytes, chars, file?}`のフラットオブジェクト、複数ファイルの場合は`{files: [...], total: {...}}`の階層構造。`omitempty`でstdin時のfileフィールド省略。統合テスト5件（stdin入力、ファイル入力、複数ファイル、マルチバイト、空入力）追加、全31件PASS。
+
+## gf-tee Tier 1: コア機能
+- 完了日: 2026-03-14
+- 作業内容: cmd/gf-tee/ 作成（go.mod初期化、go.workに追加）。stdinを読み取りstdout＋指定ファイルに同時書き出し。`io.MultiWriter`で複数Writer統合。複数ファイル同時書き出し対応、--version表示、エラーハンドリング（存在しないディレクトリ→exit 1、不正フラグ→exit 2）。テスト10件（正常系3、異常系2、エッジケース3、個別テスト2）、全PASS。
