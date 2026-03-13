@@ -60,3 +60,7 @@
 ## gf-tee Tier 1: コア機能
 - 完了日: 2026-03-14
 - 作業内容: cmd/gf-tee/ 作成（go.mod初期化、go.workに追加）。stdinを読み取りstdout＋指定ファイルに同時書き出し。`io.MultiWriter`で複数Writer統合。複数ファイル同時書き出し対応、--version表示、エラーハンドリング（存在しないディレクトリ→exit 1、不正フラグ→exit 2）。テスト10件（正常系3、異常系2、エッジケース3、個別テスト2）、全PASS。
+
+## gf-tee Tier 2: -a appendモード
+- 完了日: 2026-03-14
+- 作業内容: `-a` appendモード追加。`os.OpenFile`で`O_APPEND|O_CREATE|O_WRONLY`フラグを使用し既存ファイルへの追記に対応。`-a`なしの場合は従来通り`os.Create`で上書き。テスト6件追加（既存ファイル追記、空ファイル追記、新規作成、マルチバイト追記、空入力保持、-aなし上書き確認）、全16件PASS。

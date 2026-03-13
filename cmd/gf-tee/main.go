@@ -17,6 +17,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	fs := flag.NewFlagSet("gf-tee", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	showVersion := fs.Bool("version", false, "バージョンを表示")
+	appendMode := fs.Bool("a", false, "ファイルに追記（appendモード）")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -29,7 +30,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 
 	filePaths := fs.Args()
 
-	files, exitCode := openFiles(filePaths, stderr)
+	files, exitCode := openFiles(filePaths, *appendMode, stderr)
 	defer closeFiles(files)
 	if exitCode != 0 {
 		return exitCode
@@ -51,10 +52,16 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	return 0
 }
 
-func openFiles(paths []string, stderr io.Writer) ([]*os.File, int) {
+func openFiles(paths []string, appendMode bool, stderr io.Writer) ([]*os.File, int) {
 	files := make([]*os.File, 0, len(paths))
 	for _, path := range paths {
-		f, err := os.Create(path)
+		var f *os.File
+		var err error
+		if appendMode {
+			f, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		} else {
+			f, err = os.Create(path)
+		}
 		if err != nil {
 			fmt.Fprintf(stderr, "gf-tee: %v\n", err)
 			closeFiles(files)

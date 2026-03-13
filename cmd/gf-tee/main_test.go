@@ -123,6 +123,113 @@ func TestRun(t *testing.T) {
 	}
 }
 
+func TestAppendMode(t *testing.T) {
+	tests := []struct {
+		name        string
+		initial     string // pre-existing file content
+		input       string
+		wantFile    string
+		wantStdout  string
+		wantExit    int
+	}{
+		// 正常系
+		{
+			name:       "append to existing file",
+			initial:    "existing\n",
+			input:      "new data\n",
+			wantFile:   "existing\nnew data\n",
+			wantStdout: "new data\n",
+			wantExit:   0,
+		},
+		{
+			name:       "append to empty file",
+			initial:    "",
+			input:      "first line\n",
+			wantFile:   "first line\n",
+			wantStdout: "first line\n",
+			wantExit:   0,
+		},
+		{
+			name:       "append creates file if not exists",
+			initial:    "", // file won't be pre-created for this case
+			input:      "brand new\n",
+			wantFile:   "brand new\n",
+			wantStdout: "brand new\n",
+			wantExit:   0,
+		},
+		// エッジケース
+		{
+			name:       "append multibyte content",
+			initial:    "日本語\n",
+			input:      "追記テスト\n",
+			wantFile:   "日本語\n追記テスト\n",
+			wantStdout: "追記テスト\n",
+			wantExit:   0,
+		},
+		{
+			name:       "append empty input to existing file",
+			initial:    "keep this\n",
+			input:      "",
+			wantFile:   "keep this\n",
+			wantStdout: "",
+			wantExit:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			fpath := filepath.Join(tmpDir, "out.txt")
+
+			if tt.name != "append creates file if not exists" {
+				if err := os.WriteFile(fpath, []byte(tt.initial), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			stdin := strings.NewReader(tt.input)
+			var stdout, stderr bytes.Buffer
+
+			exitCode := run([]string{"-a", fpath}, stdin, &stdout, &stderr)
+
+			if exitCode != tt.wantExit {
+				t.Errorf("exit code = %d, want %d (stderr: %s)", exitCode, tt.wantExit, stderr.String())
+			}
+
+			if stdout.String() != tt.wantStdout {
+				t.Errorf("stdout = %q, want %q", stdout.String(), tt.wantStdout)
+			}
+
+			data, err := os.ReadFile(fpath)
+			if err != nil {
+				t.Fatalf("failed to read file: %v", err)
+			}
+			if string(data) != tt.wantFile {
+				t.Errorf("file content = %q, want %q", string(data), tt.wantFile)
+			}
+		})
+	}
+}
+
+func TestAppendWithoutFlag(t *testing.T) {
+	// Without -a, existing content should be overwritten
+	tmpDir := t.TempDir()
+	fpath := filepath.Join(tmpDir, "out.txt")
+	os.WriteFile(fpath, []byte("old content\n"), 0644)
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{fpath}, strings.NewReader("new content\n"), &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("exit code = %d, want 0", exitCode)
+	}
+
+	data, _ := os.ReadFile(fpath)
+	if string(data) != "new content\n" {
+		t.Errorf("file = %q, want %q (should overwrite without -a)", string(data), "new content\n")
+	}
+}
+
 func TestVersion(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	exitCode := run([]string{"--version"}, strings.NewReader(""), &stdout, &stderr)
