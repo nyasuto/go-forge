@@ -11,4 +11,5 @@ use (
 	./cmd/gf-sort
 	./cmd/gf-uniq
 	./cmd/gf-cut
+	./cmd/gf-sed
 )
