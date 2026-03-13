@@ -152,3 +152,7 @@
 ## gf-xargs Tier 3: -0 null区切り対応・--dry-run コマンド表示
 - 完了日: 2026-03-14
 - 作業内容: `-0`null区切り対応（`readItemsNull`関数でnullバイト区切りのカスタムスキャナー、スペース・改行を含むアイテムをそのまま保持）、`--dry-run`コマンド表示（`shellJoin`/`shellQuote`で安全なシェルコマンド文字列を生成、実行せずstdoutに出力）。`-0`と`-n`/`-P`の組み合わせ、`--dry-run`と`-n`/`-0`の組み合わせも全て動作。単体テスト21件（readItemsNull 8件、shellJoin 5件、runWithNullDelim 3件、runDryRun 5件）+統合テスト4件追加、累計69件ALL PASS。
+
+## gf-diff Tier 1: コア機能
+- 完了日: 2026-03-14
+- 作業内容: cmd/gf-diff/ 作成（go.mod初期化、go.workに追加）。2ファイルの行単位diff（Myers algorithm）。`myersDiff`関数でforward pass+backtrackによる最短編集スクリプト算出。出力は`< `（削除）、`> `（挿入）、`  `（同一）形式。差分あり→exit 1、差分なし→exit 0。--version表示、エラーハンドリング（ファイル未検出→exit 1、引数不正→exit 2）。マルチバイト対応、1000行大量入力テスト。単体テスト12件+統合テスト7件+エラー系6件+大量入力1件+バージョン1件、全28件PASS。

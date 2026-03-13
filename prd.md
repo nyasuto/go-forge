@@ -306,7 +306,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 #### gf-diff（差分表示）
 
-- [ ] Tier 1: `cmd/gf-diff/` 作成（go.mod初期化、go.workに追加）。2ファイルの行単位diff（Myers algorithm）。テスト作成・通過。テスト結果を `docs/test-results/gf-diff.md` に記録。
+- [x] Tier 1: `cmd/gf-diff/` 作成（go.mod初期化、go.workに追加）。2ファイルの行単位diff（Myers algorithm）。テスト作成・通過。テスト結果を `docs/test-results/gf-diff.md` に記録。
 - [ ] Tier 2: unified diff format (`-u`) 出力。テスト追加・通過。テスト結果を更新。
 - [ ] Tier 3: カラー出力（ターミナル検出）、`--word` 単語単位diff。テスト追加・通過。テスト結果を更新。
 
