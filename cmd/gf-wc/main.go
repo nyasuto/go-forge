@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"unicode/utf8"
 )
 
 const version = "0.1.0"
@@ -14,6 +15,7 @@ type counts struct {
 	lines int
 	words int
 	bytes int
+	chars int
 }
 
 func main() {
@@ -21,6 +23,7 @@ func main() {
 	countLines := flag.Bool("l", false, "行数のみ表示")
 	countWords := flag.Bool("w", false, "単語数のみ表示")
 	countBytes := flag.Bool("c", false, "バイト数のみ表示")
+	countChars := flag.Bool("m", false, "文字数のみ表示")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-wc [OPTIONS] [FILE]...\n\n行数・単語数・バイト数をカウントする。\n\nOptions:\n")
 		flag.PrintDefaults()
@@ -33,7 +36,7 @@ func main() {
 	}
 
 	// フラグ指定なし→全表示
-	showAll := !*countLines && !*countWords && !*countBytes
+	showAll := !*countLines && !*countWords && !*countBytes && !*countChars
 
 	args := flag.Args()
 	exitCode := 0
@@ -44,7 +47,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "gf-wc: %v\n", err)
 			os.Exit(1)
 		}
-		printCounts(c, "", showAll, *countLines, *countWords, *countBytes)
+		printCounts(c, "", showAll, *countLines, *countWords, *countBytes, *countChars)
 		return
 	}
 
@@ -74,14 +77,15 @@ func main() {
 			exitCode = 1
 			continue
 		}
-		printCounts(c, name, showAll, *countLines, *countWords, *countBytes)
+		printCounts(c, name, showAll, *countLines, *countWords, *countBytes, *countChars)
 		total.lines += c.lines
 		total.words += c.words
 		total.bytes += c.bytes
+		total.chars += c.chars
 	}
 
 	if len(args) > 1 {
-		printCounts(total, "total", showAll, *countLines, *countWords, *countBytes)
+		printCounts(total, "total", showAll, *countLines, *countWords, *countBytes, *countChars)
 	}
 
 	os.Exit(exitCode)
@@ -96,6 +100,7 @@ func wc(r io.Reader) (counts, error) {
 		line := scanner.Bytes()
 		c.lines++
 		c.bytes += len(line) + 1 // +1 for newline
+		c.chars += utf8.RuneCount(line) + 1 // +1 for newline
 		c.words += countWords(line)
 	}
 	if err := scanner.Err(); err != nil {
@@ -118,7 +123,7 @@ func countWords(line []byte) int {
 	return count
 }
 
-func printCounts(c counts, name string, showAll, showLines, showWords, showBytes bool) {
+func printCounts(c counts, name string, showAll, showLines, showWords, showBytes, showChars bool) {
 	parts := []string{}
 	if showAll || showLines {
 		parts = append(parts, fmt.Sprintf("%8d", c.lines))
@@ -128,6 +133,9 @@ func printCounts(c counts, name string, showAll, showLines, showWords, showBytes
 	}
 	if showAll || showBytes {
 		parts = append(parts, fmt.Sprintf("%8d", c.bytes))
+	}
+	if showChars {
+		parts = append(parts, fmt.Sprintf("%8d", c.chars))
 	}
 
 	for i, p := range parts {

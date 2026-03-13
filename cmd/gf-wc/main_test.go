@@ -16,6 +16,7 @@ func TestWc(t *testing.T) {
 		wantLines int
 		wantWords int
 		wantBytes int
+		wantChars int
 	}{
 		{
 			name:      "単一行",
@@ -23,6 +24,7 @@ func TestWc(t *testing.T) {
 			wantLines: 1,
 			wantWords: 2,
 			wantBytes: 12,
+			wantChars: 12,
 		},
 		{
 			name:      "複数行",
@@ -30,6 +32,7 @@ func TestWc(t *testing.T) {
 			wantLines: 3,
 			wantWords: 6,
 			wantBytes: 29,
+			wantChars: 29,
 		},
 		{
 			name:      "空入力",
@@ -37,6 +40,7 @@ func TestWc(t *testing.T) {
 			wantLines: 0,
 			wantWords: 0,
 			wantBytes: 0,
+			wantChars: 0,
 		},
 		{
 			name:      "空行のみ",
@@ -44,6 +48,7 @@ func TestWc(t *testing.T) {
 			wantLines: 3,
 			wantWords: 0,
 			wantBytes: 3,
+			wantChars: 3,
 		},
 		{
 			name:      "タブ区切り",
@@ -51,6 +56,7 @@ func TestWc(t *testing.T) {
 			wantLines: 1,
 			wantWords: 3,
 			wantBytes: 6,
+			wantChars: 6,
 		},
 		{
 			name:      "連続スペース",
@@ -58,6 +64,7 @@ func TestWc(t *testing.T) {
 			wantLines: 1,
 			wantWords: 2,
 			wantBytes: 18,
+			wantChars: 18,
 		},
 		{
 			name:      "マルチバイト文字",
@@ -65,6 +72,23 @@ func TestWc(t *testing.T) {
 			wantLines: 1,
 			wantWords: 2,
 			wantBytes: 23,
+			wantChars: 9, // 5 + 1(space) + 2 + 1(newline) = 9
+		},
+		{
+			name:      "絵文字含む",
+			input:     "hello 🌍\n",
+			wantLines: 1,
+			wantWords: 2,
+			wantBytes: 11, // 5 + 1 + 4 + 1 = 11
+			wantChars: 8,  // 5 + 1 + 1 + 1 = 8
+		},
+		{
+			name:      "混合マルチバイト複数行",
+			input:     "abc\nあいう\n",
+			wantLines: 2,
+			wantWords: 2,
+			wantBytes: 14, // 3+1 + 9+1 = 14
+			wantChars: 8,  // 3+1 + 3+1 = 8
 		},
 	}
 
@@ -83,6 +107,9 @@ func TestWc(t *testing.T) {
 			}
 			if c.bytes != tt.wantBytes {
 				t.Errorf("bytes: got %d, want %d", c.bytes, tt.wantBytes)
+			}
+			if c.chars != tt.wantChars {
+				t.Errorf("chars: got %d, want %d", c.chars, tt.wantChars)
 			}
 		})
 	}
@@ -232,6 +259,61 @@ func TestIntegration(t *testing.T) {
 		}
 		if !strings.Contains(stdout, "1") {
 			t.Errorf("expected line count in output: %q", stdout)
+		}
+	})
+
+	t.Run("-m フラグ ASCII", func(t *testing.T) {
+		stdout, _, code := runCmd(t, binary, []string{"-m"}, "hello\n")
+		if code != 0 {
+			t.Errorf("exit code: got %d, want 0", code)
+		}
+		trimmed := strings.TrimSpace(stdout)
+		if trimmed != "6" {
+			t.Errorf("got %q, want 6", trimmed)
+		}
+	})
+
+	t.Run("-m フラグ マルチバイト", func(t *testing.T) {
+		stdout, _, code := runCmd(t, binary, []string{"-m"}, "こんにちは\n")
+		if code != 0 {
+			t.Errorf("exit code: got %d, want 0", code)
+		}
+		trimmed := strings.TrimSpace(stdout)
+		// 5 runes + 1 newline = 6
+		if trimmed != "6" {
+			t.Errorf("got %q, want 6", trimmed)
+		}
+	})
+
+	t.Run("複数ファイルで合計行表示", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		f1 := filepath.Join(tmpDir, "a.txt")
+		f2 := filepath.Join(tmpDir, "b.txt")
+		os.WriteFile(f1, []byte("one\n"), 0644)
+		os.WriteFile(f2, []byte("two\nthree\n"), 0644)
+
+		stdout, _, code := runCmd(t, binary, []string{f1, f2}, "")
+		if code != 0 {
+			t.Errorf("exit code: got %d, want 0", code)
+		}
+		lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+		if len(lines) != 3 {
+			t.Fatalf("expected 3 output lines (2 files + total), got %d: %q", len(lines), stdout)
+		}
+		if !strings.Contains(lines[2], "total") {
+			t.Errorf("expected 'total' in last line: %q", lines[2])
+		}
+	})
+
+	t.Run("-m フラグ 絵文字", func(t *testing.T) {
+		stdout, _, code := runCmd(t, binary, []string{"-m"}, "🌍🌎\n")
+		if code != 0 {
+			t.Errorf("exit code: got %d, want 0", code)
+		}
+		trimmed := strings.TrimSpace(stdout)
+		// 2 emoji runes + 1 newline = 3
+		if trimmed != "3" {
+			t.Errorf("got %q, want 3", trimmed)
 		}
 	})
 }
