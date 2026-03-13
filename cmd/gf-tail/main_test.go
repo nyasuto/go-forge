@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTail(t *testing.T) {
@@ -241,6 +243,143 @@ func TestIntegration(t *testing.T) {
 		}
 		if string(out) != "data\n" {
 			t.Errorf("got %q, want %q", string(out), "data\n")
+		}
+	})
+
+	// --- Tier 2: -f follow mode tests ---
+
+	t.Run("-f follows appended data", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "follow.txt")
+		os.WriteFile(tmpFile, []byte("line1\nline2\nline3\n"), 0644)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, bin, "-f", "-n", "2", tmpFile)
+		var outBuf bytes.Buffer
+		cmd.Stdout = &outBuf
+		cmd.Stderr = &bytes.Buffer{}
+
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("failed to start: %v", err)
+		}
+
+		// Wait for initial output
+		time.Sleep(300 * time.Millisecond)
+
+		// Append new data to the file
+		f, err := os.OpenFile(tmpFile, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			t.Fatalf("failed to open for append: %v", err)
+		}
+		fmt.Fprintln(f, "line4")
+		fmt.Fprintln(f, "line5")
+		f.Close()
+
+		// Wait for follow to pick up new data
+		time.Sleep(500 * time.Millisecond)
+
+		cancel()
+		cmd.Wait()
+
+		got := outBuf.String()
+		// Should contain initial tail (line2, line3) and appended lines
+		if !strings.Contains(got, "line2\n") {
+			t.Errorf("expected initial tail to contain 'line2', got %q", got)
+		}
+		if !strings.Contains(got, "line3\n") {
+			t.Errorf("expected initial tail to contain 'line3', got %q", got)
+		}
+		if !strings.Contains(got, "line4\n") {
+			t.Errorf("expected followed output to contain 'line4', got %q", got)
+		}
+		if !strings.Contains(got, "line5\n") {
+			t.Errorf("expected followed output to contain 'line5', got %q", got)
+		}
+	})
+
+	t.Run("-f without file exits 2", func(t *testing.T) {
+		cmd := exec.Command(bin, "-f")
+		cmd.Stdin = strings.NewReader("data\n")
+		err := cmd.Run()
+		if err == nil {
+			t.Fatal("expected error for -f without file")
+		}
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("expected ExitError, got %T", err)
+		}
+		if exitErr.ExitCode() != 2 {
+			t.Errorf("exit code = %d, want 2", exitErr.ExitCode())
+		}
+	})
+
+	t.Run("-f with stdin hyphen exits 2", func(t *testing.T) {
+		cmd := exec.Command(bin, "-f", "-")
+		cmd.Stdin = strings.NewReader("data\n")
+		err := cmd.Run()
+		if err == nil {
+			t.Fatal("expected error for -f with stdin")
+		}
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("expected ExitError, got %T", err)
+		}
+		if exitErr.ExitCode() != 2 {
+			t.Errorf("exit code = %d, want 2", exitErr.ExitCode())
+		}
+	})
+
+	t.Run("-f with multiple files exits 2", func(t *testing.T) {
+		dir := t.TempDir()
+		f1 := filepath.Join(dir, "a.txt")
+		f2 := filepath.Join(dir, "b.txt")
+		os.WriteFile(f1, []byte("a\n"), 0644)
+		os.WriteFile(f2, []byte("b\n"), 0644)
+
+		cmd := exec.Command(bin, "-f", f1, f2)
+		err := cmd.Run()
+		if err == nil {
+			t.Fatal("expected error for -f with multiple files")
+		}
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("expected ExitError, got %T", err)
+		}
+		if exitErr.ExitCode() != 2 {
+			t.Errorf("exit code = %d, want 2", exitErr.ExitCode())
+		}
+	})
+
+	t.Run("-f detects file truncation", func(t *testing.T) {
+		tmpFile := filepath.Join(t.TempDir(), "trunc.txt")
+		os.WriteFile(tmpFile, []byte("old1\nold2\nold3\n"), 0644)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, bin, "-f", "-n", "1", tmpFile)
+		var outBuf bytes.Buffer
+		cmd.Stdout = &outBuf
+		cmd.Stderr = &bytes.Buffer{}
+
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("failed to start: %v", err)
+		}
+
+		time.Sleep(300 * time.Millisecond)
+
+		// Truncate and write new content
+		os.WriteFile(tmpFile, []byte("new1\n"), 0644)
+
+		time.Sleep(500 * time.Millisecond)
+
+		cancel()
+		cmd.Wait()
+
+		got := outBuf.String()
+		if !strings.Contains(got, "new1\n") {
+			t.Errorf("expected truncated+rewritten content 'new1', got %q", got)
 		}
 	})
 }

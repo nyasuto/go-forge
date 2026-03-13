@@ -32,3 +32,15 @@
 | multiple files with headers | PASS |
 | empty file | PASS |
 | pipe: echo \| gf-tail | PASS |
+
+## Tier 2: -f フォローモード
+
+### 統合テスト: 5件 全PASS
+
+| テスト名 | 種別 | 結果 |
+|----------|------|------|
+| -f follows appended data | 正常系 | PASS |
+| -f without file exits 2 | 異常系 | PASS |
+| -f with stdin hyphen exits 2 | 異常系 | PASS |
+| -f with multiple files exits 2 | 異常系 | PASS |
+| -f detects file truncation | エッジケース | PASS |
