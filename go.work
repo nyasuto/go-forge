@@ -8,4 +8,5 @@ use (
 	./cmd/gf-tee
 	./cmd/gf-grep
 	./cmd/gf-find
+	./cmd/gf-sort
 )

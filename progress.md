@@ -92,3 +92,7 @@
 ## gf-find Tier 3: -exec 安全版・glob対応
 - 完了日: 2026-03-14
 - 作業内容: `-exec "command {}"` 確認プロンプト付きコマンド実行オプション追加。`{}`をマッチしたパスに置換し、`sh -c`で実行。実行前に`< command path >?`プロンプトをstderrに表示し、y/yesの場合のみ実行。`-path`フルパスglobマッチオプション追加（`filepath.Match`でパス全体にマッチ）。`-name`との組み合わせもAND結合で動作。`bufio.Reader`でstdin読み取りをキャッシュし複数ファイルの連続プロンプトに対応。単体テスト12件+統合テスト10件追加、累計82件ALL PASS。
+
+## gf-sort Tier 1: コア機能
+- 完了日: 2026-03-14
+- 作業内容: cmd/gf-sort/ 作成（go.mod初期化、go.workに追加）。辞書順ソート（`sort.Strings`）、stdin対応（引数なし・ハイフン）、複数ファイル入力の結合ソート、--version表示、エラーハンドリング（存在しないファイル→exit 1）。単体テスト4件+統合テスト13件、全17件PASS。

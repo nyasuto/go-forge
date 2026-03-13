@@ -129,7 +129,7 @@ goforge/
 
 #### gf-sort（ソート）
 
-- [ ] Tier 1: `cmd/gf-sort/` 作成（go.mod初期化、go.workに追加）。辞書順ソート、stdin対応。テスト作成・通過。テスト結果を `docs/test-results/gf-sort.md` に記録。
+- [x] Tier 1: `cmd/gf-sort/` 作成（go.mod初期化、go.workに追加）。辞書順ソート、stdin対応。テスト作成・通過。テスト結果を `docs/test-results/gf-sort.md` に記録。
 - [ ] Tier 2: `-n` 数値ソート、`-r` 逆順、`-k` キー指定、`-u` 重複除去。テスト追加・通過。テスト結果を更新。
 - [ ] Tier 3: `-t` デリミタ指定。テスト追加・通過。テスト結果を更新。
 
