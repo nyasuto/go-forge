@@ -75,7 +75,7 @@ goforge/
 
 ### Task 0: プロジェクト初期化
 
-- [ ] go.work、Makefile、docs/test-results/ ディレクトリを作成。Makefileには `build`（全ツールビルド）、`test`（全ツールテスト）、`quality`（test + vet）ターゲットを定義。
+- [x] go.work、Makefile、docs/test-results/ ディレクトリを作成。Makefileには `build`（全ツールビルド）、`test`（全ツールテスト）、`quality`（test + vet）ターゲットを定義。
 
 ---
 
