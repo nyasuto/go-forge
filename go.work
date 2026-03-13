@@ -9,4 +9,5 @@ use (
 	./cmd/gf-grep
 	./cmd/gf-find
 	./cmd/gf-sort
+	./cmd/gf-uniq
 )
