@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -713,5 +714,286 @@ func TestFindNoMatchWithFilter(t *testing.T) {
 	got := strings.TrimSpace(stdout)
 	if got != "" {
 		t.Errorf("expected empty output, got %q", got)
+	}
+}
+
+// Unit tests for matchPath
+func TestMatchPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		pattern string
+		want    bool
+	}{
+		{"empty pattern matches anything", "/foo/bar.txt", "", true},
+		{"exact path match", "foo/bar.txt", "foo/bar.txt", true},
+		{"glob star in filename", "foo/bar.txt", "foo/*.txt", true},
+		{"glob star no match", "foo/bar.go", "foo/*.txt", false},
+		{"glob question mark", "foo/bar1.txt", "foo/bar?.txt", true},
+		{"nested path with glob", "src/sub/file.go", "src/*/*.go", true},
+		{"no match different dir", "other/file.go", "src/*.go", false},
+		{"multibyte path", "src/ファイル.txt", "src/*.txt", true},
+		{"invalid pattern", "foo/bar.txt", "[", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchPath(tt.path, tt.pattern)
+			if got != tt.want {
+				t.Errorf("matchPath(%q, %q) = %v, want %v", tt.path, tt.pattern, got, tt.want)
+			}
+		})
+	}
+}
+
+// Unit tests for executeCmd
+func TestExecuteCmd(t *testing.T) {
+	// Test that confirmation prompt is shown and "n" skips execution
+	oldPromptReader := promptReader
+	defer func() { promptReader = oldPromptReader }()
+
+	t.Run("decline execution", func(t *testing.T) {
+		promptReader = bufio.NewReader(strings.NewReader("n\n"))
+		// Capture stderr
+		oldStderr := os.Stderr
+		r, w, _ := os.Pipe()
+		os.Stderr = w
+
+		executeCmd("/tmp/test.txt", "echo {}")
+
+		w.Close()
+		os.Stderr = oldStderr
+		var buf [1024]byte
+		n, _ := r.Read(buf[:])
+		stderr := string(buf[:n])
+		if !strings.Contains(stderr, "< echo /tmp/test.txt >?") {
+			t.Errorf("expected prompt in stderr, got %q", stderr)
+		}
+	})
+
+	t.Run("accept execution", func(t *testing.T) {
+		promptReader = bufio.NewReader(strings.NewReader("y\n"))
+		// Capture stdout and stderr
+		oldStdout := os.Stdout
+		oldStderr := os.Stderr
+		rOut, wOut, _ := os.Pipe()
+		rErr, wErr, _ := os.Pipe()
+		os.Stdout = wOut
+		os.Stderr = wErr
+
+		executeCmd("hello_world", "echo {}")
+
+		wOut.Close()
+		wErr.Close()
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+
+		var outBuf [1024]byte
+		n, _ := rOut.Read(outBuf[:])
+		stdout := string(outBuf[:n])
+		rErr.Read(outBuf[:]) // drain stderr
+
+		if !strings.Contains(stdout, "hello_world") {
+			t.Errorf("expected echo output, got %q", stdout)
+		}
+	})
+
+	t.Run("yes also accepted", func(t *testing.T) {
+		promptReader = bufio.NewReader(strings.NewReader("yes\n"))
+		oldStdout := os.Stdout
+		oldStderr := os.Stderr
+		_, wOut, _ := os.Pipe()
+		_, wErr, _ := os.Pipe()
+		os.Stdout = wOut
+		os.Stderr = wErr
+
+		executeCmd("test_file", "echo {}")
+
+		wOut.Close()
+		wErr.Close()
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+	})
+}
+
+// Integration tests for -path filter
+func TestFindPathFilter(t *testing.T) {
+	bin := buildBinary(t)
+	root := createTestTree(t)
+
+	t.Run("path glob matching subdirectory", func(t *testing.T) {
+		// Match files under sub/deep/
+		stdout, _, exitCode := runFind(t, bin, "-path", filepath.Join(root, "sub", "deep", "*.json"), root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		want := []string{filepath.Join(root, "sub", "deep", "file5.json")}
+		if len(got) != len(want) {
+			t.Errorf("got %d files, want %d\ngot:  %v\nwant: %v", len(got), len(want), got, want)
+			return
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("file[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("path with name combined", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-path", filepath.Join(root, "sub", "*"), "-name", "*.go", root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := sortedLines(stdout)
+		want := []string{filepath.Join(root, "sub", "file4.go")}
+		if len(got) != len(want) {
+			t.Errorf("got %d files, want %d\ngot:  %v\nwant: %v", len(got), len(want), got, want)
+		}
+	})
+
+	t.Run("path no match", func(t *testing.T) {
+		stdout, _, exitCode := runFind(t, bin, "-path", filepath.Join(root, "nonexist", "*"), root)
+		if exitCode != 0 {
+			t.Errorf("exit code = %d, want 0", exitCode)
+		}
+		got := strings.TrimSpace(stdout)
+		if got != "" {
+			t.Errorf("expected empty output, got %q", got)
+		}
+	})
+}
+
+// Integration tests for -exec option
+func TestFindExec(t *testing.T) {
+	bin := buildBinary(t)
+	root := t.TempDir()
+
+	f1 := filepath.Join(root, "a.txt")
+	f2 := filepath.Join(root, "b.txt")
+	os.WriteFile(f1, []byte("hello"), 0644)
+	os.WriteFile(f2, []byte("world"), 0644)
+
+	t.Run("exec with yes confirmation", func(t *testing.T) {
+		cmd := exec.Command(bin, "-type", "f", "-name", "a.txt", "-exec", "echo {}", root)
+		cmd.Stdin = strings.NewReader("y\n")
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if !strings.Contains(stdout.String(), f1) {
+			t.Errorf("expected echo output with file path, got stdout=%q", stdout.String())
+		}
+		if !strings.Contains(stderr.String(), "< echo "+f1+" >?") {
+			t.Errorf("expected prompt in stderr, got %q", stderr.String())
+		}
+	})
+
+	t.Run("exec with no confirmation", func(t *testing.T) {
+		cmd := exec.Command(bin, "-type", "f", "-name", "a.txt", "-exec", "echo {}", root)
+		cmd.Stdin = strings.NewReader("n\n")
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		// Should not have executed echo
+		if strings.Contains(stdout.String(), f1) {
+			t.Errorf("expected no output when declined, got stdout=%q", stdout.String())
+		}
+	})
+
+	t.Run("exec multiple files with all yes", func(t *testing.T) {
+		cmd := exec.Command(bin, "-type", "f", "-exec", "echo {}", root)
+		// Provide enough y responses for all files
+		cmd.Stdin = strings.NewReader("y\ny\ny\ny\ny\n")
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		// Both files should appear in output
+		out := stdout.String()
+		if !strings.Contains(out, "a.txt") || !strings.Contains(out, "b.txt") {
+			t.Errorf("expected both files in output, got stdout=%q stderr=%q", out, stderr.String())
+		}
+	})
+
+	t.Run("exec with invalid command", func(t *testing.T) {
+		cmd := exec.Command(bin, "-type", "f", "-name", "a.txt", "-exec", "nonexistent_cmd_12345 {}", root)
+		cmd.Stdin = strings.NewReader("y\n")
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		cmd.Run() // may fail, that's ok
+		if !strings.Contains(stderr.String(), "gf-find:") {
+			t.Errorf("expected error in stderr, got %q", stderr.String())
+		}
+	})
+
+	t.Run("exec with multibyte filename", func(t *testing.T) {
+		mbFile := filepath.Join(root, "日本語.txt")
+		os.WriteFile(mbFile, []byte("テスト"), 0644)
+		cmd := exec.Command(bin, "-type", "f", "-name", "日本語.txt", "-exec", "echo {}", root)
+		cmd.Stdin = strings.NewReader("y\n")
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if !strings.Contains(stdout.String(), "日本語.txt") {
+			t.Errorf("expected multibyte filename in output, got %q", stdout.String())
+		}
+	})
+}
+
+// Edge case: -exec with empty match (no prompt should appear)
+func TestFindExecNoMatch(t *testing.T) {
+	bin := buildBinary(t)
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "file.txt"), []byte("x"), 0644)
+
+	cmd := exec.Command(bin, "-type", "f", "-name", "*.go", "-exec", "echo {}", root)
+	cmd.Stdin = strings.NewReader("")
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if stdout.String() != "" {
+		t.Errorf("expected empty stdout, got %q", stdout.String())
+	}
+	if stderr.String() != "" {
+		t.Errorf("expected empty stderr, got %q", stderr.String())
+	}
+}
+
+// Edge case: -path with multibyte characters
+func TestFindPathMultibyte(t *testing.T) {
+	bin := buildBinary(t)
+	root := t.TempDir()
+	subDir := filepath.Join(root, "データ")
+	os.MkdirAll(subDir, 0755)
+	f := filepath.Join(subDir, "ファイル.txt")
+	os.WriteFile(f, []byte("テスト"), 0644)
+
+	stdout, _, exitCode := runFind(t, bin, "-path", filepath.Join(root, "データ", "*.txt"), root)
+	if exitCode != 0 {
+		t.Errorf("exit code = %d, want 0", exitCode)
+	}
+	got := strings.TrimSpace(stdout)
+	if got != f {
+		t.Errorf("got %q, want %q", got, f)
 	}
 }

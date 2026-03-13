@@ -89,3 +89,40 @@
 - Tier 2 追加 単体テスト: 25件（parseSizeExpr 12件 + parseMtimeExpr 7件 + matchType 6件）
 - Tier 2 追加 統合テスト: 17件
 - 累計: 60件 ALL PASS
+
+## Tier 3: -exec 安全版（確認プロンプト付き）・glob対応
+
+### 実行日: 2026-03-14
+
+### テスト結果: ALL PASS
+
+### テストケース一覧
+
+| # | テスト名 | 種別 | 結果 |
+|---|---------|------|------|
+| 61 | MatchPath/empty_pattern_matches_anything | 正常系 | PASS |
+| 62 | MatchPath/exact_path_match | 正常系 | PASS |
+| 63 | MatchPath/glob_star_in_filename | 正常系 | PASS |
+| 64 | MatchPath/glob_star_no_match | 正常系 | PASS |
+| 65 | MatchPath/glob_question_mark | 正常系 | PASS |
+| 66 | MatchPath/nested_path_with_glob | 正常系 | PASS |
+| 67 | MatchPath/no_match_different_dir | 正常系 | PASS |
+| 68 | MatchPath/multibyte_path | エッジケース | PASS |
+| 69 | MatchPath/invalid_pattern | 異常系 | PASS |
+| 70 | ExecuteCmd/decline_execution | 正常系 | PASS |
+| 71 | ExecuteCmd/accept_execution | 正常系 | PASS |
+| 72 | ExecuteCmd/yes_also_accepted | 正常系 | PASS |
+| 73 | PathFilter/path_glob_matching_subdirectory | 正常系 | PASS |
+| 74 | PathFilter/path_with_name_combined | 正常系 | PASS |
+| 75 | PathFilter/path_no_match | エッジケース | PASS |
+| 76 | Exec/exec_with_yes_confirmation | 正常系 | PASS |
+| 77 | Exec/exec_with_no_confirmation | 正常系 | PASS |
+| 78 | Exec/exec_multiple_files_with_all_yes | 正常系 | PASS |
+| 79 | Exec/exec_with_invalid_command | 異常系 | PASS |
+| 80 | Exec/exec_with_multibyte_filename | エッジケース | PASS |
+| 81 | ExecNoMatch | エッジケース | PASS |
+| 82 | PathMultibyte | エッジケース | PASS |
+
+- Tier 3 追加 単体テスト: 12件（matchPath 9件 + executeCmd 3件）
+- Tier 3 追加 統合テスト: 10件
+- 累計: 82件 ALL PASS

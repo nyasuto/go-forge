@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -13,17 +16,21 @@ const version = "0.1.0"
 
 type findOptions struct {
 	namePattern string
+	pathPattern string // glob pattern against full path
 	typeFilter  string // "f" for files, "d" for directories
 	sizeExpr    string // e.g. "+100k", "-1M", "50c"
 	mtimeExpr   string // e.g. "+7", "-1", "0"
+	execCmd     string // command template with {} placeholder
 }
 
 func main() {
 	showVersion := flag.Bool("version", false, "バージョンを表示")
 	namePattern := flag.String("name", "", "ファイル名パターン（glob形式）")
+	pathPattern := flag.String("path", "", "フルパスに対するglobパターン")
 	typeFilter := flag.String("type", "", "タイプフィルタ: f（ファイル）, d（ディレクトリ）")
 	sizeExpr := flag.String("size", "", "サイズ条件: +N[ckMG]（より大きい）, -N[ckMG]（より小さい）, N[ckMG]（ちょうど）")
 	mtimeExpr := flag.String("mtime", "", "更新日条件: +N（N日より前）, -N（N日以内）, N（ちょうどN日前）")
+	execCmd := flag.String("exec", "", "マッチしたファイルに対して実行するコマンド（{}がパスに置換、確認プロンプト付き）")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-find [OPTIONS] [PATH]...\n\n再帰的にファイルを検索する。\n\nOptions:\n")
@@ -60,9 +67,11 @@ func main() {
 
 	opts := findOptions{
 		namePattern: *namePattern,
+		pathPattern: *pathPattern,
 		typeFilter:  *typeFilter,
 		sizeExpr:    *sizeExpr,
 		mtimeExpr:   *mtimeExpr,
+		execCmd:     *execCmd,
 	}
 
 	paths := flag.Args()
@@ -83,6 +92,17 @@ func main() {
 // nowFunc is overridable for testing
 var nowFunc = time.Now
 
+// promptReader is the reader for confirmation prompts (overridable for testing)
+var promptReader *bufio.Reader
+
+func getPromptReader() *bufio.Reader {
+	if promptReader != nil {
+		return promptReader
+	}
+	promptReader = bufio.NewReader(os.Stdin)
+	return promptReader
+}
+
 func find(root string, opts findOptions) error {
 	info, err := os.Lstat(root)
 	if err != nil {
@@ -92,7 +112,7 @@ func find(root string, opts findOptions) error {
 	// If root is not a directory, check if it matches and print
 	if !info.IsDir() {
 		if matchEntry(root, info, opts) {
-			fmt.Println(root)
+			handleMatch(root, opts)
 		}
 		return nil
 	}
@@ -103,14 +123,42 @@ func find(root string, opts findOptions) error {
 			return nil
 		}
 		if matchEntry(path, fi, opts) {
-			fmt.Println(path)
+			handleMatch(path, opts)
 		}
 		return nil
 	})
 }
 
+func handleMatch(path string, opts findOptions) {
+	if opts.execCmd == "" {
+		fmt.Println(path)
+		return
+	}
+	executeCmd(path, opts.execCmd)
+}
+
+func executeCmd(path, cmdTemplate string) {
+	cmdStr := strings.ReplaceAll(cmdTemplate, "{}", path)
+	fmt.Fprintf(os.Stderr, "< %s >? ", cmdStr)
+	reader := getPromptReader()
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer != "y" && answer != "yes" {
+		return
+	}
+	cmd := exec.Command("sh", "-c", cmdStr)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "gf-find: exec エラー: %v\n", err)
+	}
+}
+
 func matchEntry(path string, fi os.FileInfo, opts findOptions) bool {
 	if !matchName(fi.Name(), opts.namePattern) {
+		return false
+	}
+	if !matchPath(path, opts.pathPattern) {
 		return false
 	}
 	if !matchType(fi, opts.typeFilter) {
@@ -130,6 +178,18 @@ func matchName(name, pattern string) bool {
 		return true
 	}
 	matched, err := filepath.Match(pattern, name)
+	if err != nil {
+		return false
+	}
+	return matched
+}
+
+func matchPath(path, pattern string) bool {
+	if pattern == "" {
+		return true
+	}
+	// Try matching against full path using filepath.Match
+	matched, err := filepath.Match(pattern, path)
 	if err != nil {
 		return false
 	}

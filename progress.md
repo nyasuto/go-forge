@@ -88,3 +88,7 @@
 ## gf-find Tier 2: -type f/d、-size、-mtime オプション
 - 完了日: 2026-03-14
 - 作業内容: `-type f/d`（ファイル/ディレクトリフィルタ）、`-size`（サイズ条件: +N/-N/N + c/k/M/G単位、デフォルト512バイトブロック）、`-mtime`（更新日条件: +N日より前/-N日以内/ちょうどN日前）を追加。`findOptions`構造体でオプション管理、`matchEntry`で全フィルタをAND結合。不正な-type値はexit 2、不正な-size/-mtime式もexit 2。単体テスト25件+統合テスト17件追加、累計60件ALL PASS。
+
+## gf-find Tier 3: -exec 安全版・glob対応
+- 完了日: 2026-03-14
+- 作業内容: `-exec "command {}"` 確認プロンプト付きコマンド実行オプション追加。`{}`をマッチしたパスに置換し、`sh -c`で実行。実行前に`< command path >?`プロンプトをstderrに表示し、y/yesの場合のみ実行。`-path`フルパスglobマッチオプション追加（`filepath.Match`でパス全体にマッチ）。`-name`との組み合わせもAND結合で動作。`bufio.Reader`でstdin読み取りをキャッシュし複数ファイルの連続プロンプトに対応。単体テスト12件+統合テスト10件追加、累計82件ALL PASS。
