@@ -310,6 +310,206 @@ func TestRunFileNotFound(t *testing.T) {
 	})
 }
 
+// --- Unit tests for buildHunks ---
+
+func TestBuildHunks(t *testing.T) {
+	tests := []struct {
+		name        string
+		a, b        []string
+		context     int
+		wantHunks   int
+		wantHeaders []string // "@@ -x,y +a,b @@"
+	}{
+		{
+			name:        "single change with context",
+			a:           []string{"a", "b", "c", "d", "e"},
+			b:           []string{"a", "b", "x", "d", "e"},
+			context:     3,
+			wantHunks:   1,
+			wantHeaders: []string{"@@ -1,5 +1,5 @@"},
+		},
+		{
+			name:        "two distant changes become two hunks",
+			a:           []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"},
+			b:           []string{"1", "X", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "Y"},
+			context:     2,
+			wantHunks:   2,
+			wantHeaders: []string{"@@ -1,4 +1,4 @@", "@@ -13,3 +13,3 @@"},
+		},
+		{
+			name:        "insert at beginning",
+			a:           []string{"b", "c"},
+			b:           []string{"a", "b", "c"},
+			context:     3,
+			wantHunks:   1,
+			wantHeaders: []string{"@@ -1,2 +1,3 @@"},
+		},
+		{
+			name:        "delete at end",
+			a:           []string{"a", "b", "c"},
+			b:           []string{"a", "b"},
+			context:     3,
+			wantHunks:   1,
+			wantHeaders: []string{"@@ -1,3 +1,2 @@"},
+		},
+		{
+			name:        "zero context",
+			a:           []string{"a", "b", "c"},
+			b:           []string{"a", "x", "c"},
+			context:     0,
+			wantHunks:   1,
+			wantHeaders: []string{"@@ -2,1 +2,1 @@"},
+		},
+		{
+			name:        "nearby changes merge into single hunk",
+			a:           []string{"1", "2", "3", "4", "5", "6", "7"},
+			b:           []string{"1", "X", "3", "4", "Y", "6", "7"},
+			context:     2,
+			wantHunks:   1,
+			wantHeaders: []string{"@@ -1,7 +1,7 @@"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			edits := myersDiff(tt.a, tt.b)
+			hunks := buildHunks(edits, tt.context)
+			if len(hunks) != tt.wantHunks {
+				t.Fatalf("expected %d hunks, got %d", tt.wantHunks, len(hunks))
+			}
+			for i, h := range hunks {
+				header := fmt.Sprintf("@@ -%d,%d +%d,%d @@", h.oldStart, h.oldCount, h.newStart, h.newCount)
+				if header != tt.wantHeaders[i] {
+					t.Errorf("hunk[%d]: expected %q, got %q", i, tt.wantHeaders[i], header)
+				}
+			}
+		})
+	}
+}
+
+// --- Integration tests for unified format ---
+
+func TestRunUnified(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name       string
+		file1      string
+		file2      string
+		wantCode   int
+		wantOutput []string // lines to check in output
+	}{
+		{
+			name:     "basic unified diff",
+			file1:    "a\nb\nc\n",
+			file2:    "a\nx\nc\n",
+			wantCode: 1,
+			wantOutput: []string{
+				"---",
+				"+++",
+				"@@ -1,3 +1,3 @@",
+				" a",
+				"-b",
+				"+x",
+				" c",
+			},
+		},
+		{
+			name:       "identical files no output",
+			file1:      "a\nb\nc\n",
+			file2:      "a\nb\nc\n",
+			wantCode:   0,
+			wantOutput: nil,
+		},
+		{
+			name:     "insert lines unified",
+			file1:    "a\nc\n",
+			file2:    "a\nb\nc\n",
+			wantCode: 1,
+			wantOutput: []string{
+				"@@ -1,2 +1,3 @@",
+				" a",
+				"+b",
+				" c",
+			},
+		},
+		{
+			name:     "delete lines unified",
+			file1:    "a\nb\nc\n",
+			file2:    "a\nc\n",
+			wantCode: 1,
+			wantOutput: []string{
+				"@@ -1,3 +1,2 @@",
+				" a",
+				"-b",
+				" c",
+			},
+		},
+		{
+			name:     "multibyte unified",
+			file1:    "こんにちは\n世界\n",
+			file2:    "こんにちは\n日本\n",
+			wantCode: 1,
+			wantOutput: []string{
+				"-世界",
+				"+日本",
+			},
+		},
+		{
+			name:     "file headers contain filenames",
+			file1:    "a\n",
+			file2:    "b\n",
+			wantCode: 1,
+			wantOutput: []string{
+				"--- ",
+				"+++ ",
+			},
+		},
+		{
+			name:     "empty first file unified",
+			file1:    "",
+			file2:    "a\nb\n",
+			wantCode: 1,
+			wantOutput: []string{
+				"@@ -1,0 +1,2 @@",
+				"+a",
+				"+b",
+			},
+		},
+		{
+			name:     "empty second file unified",
+			file1:    "a\nb\n",
+			file2:    "",
+			wantCode: 1,
+			wantOutput: []string{
+				"@@ -1,2 +1,0 @@",
+				"-a",
+				"-b",
+			},
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f1 := writeTestFile(t, tmpDir, fmt.Sprintf("u_a%d.txt", i), tt.file1)
+			f2 := writeTestFile(t, tmpDir, fmt.Sprintf("u_b%d.txt", i), tt.file2)
+
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"-u", f1, f2}, &stdout, &stderr)
+
+			if code != tt.wantCode {
+				t.Errorf("exit code: expected %d, got %d (stderr: %s)", tt.wantCode, code, stderr.String())
+			}
+			output := stdout.String()
+			for _, want := range tt.wantOutput {
+				if !strings.Contains(output, want) {
+					t.Errorf("output missing %q\ngot:\n%s", want, output)
+				}
+			}
+		})
+	}
+}
+
 func TestRunLargeInput(t *testing.T) {
 	tmpDir := t.TempDir()
 

@@ -156,3 +156,7 @@
 ## gf-diff Tier 1: コア機能
 - 完了日: 2026-03-14
 - 作業内容: cmd/gf-diff/ 作成（go.mod初期化、go.workに追加）。2ファイルの行単位diff（Myers algorithm）。`myersDiff`関数でforward pass+backtrackによる最短編集スクリプト算出。出力は`< `（削除）、`> `（挿入）、`  `（同一）形式。差分あり→exit 1、差分なし→exit 0。--version表示、エラーハンドリング（ファイル未検出→exit 1、引数不正→exit 2）。マルチバイト対応、1000行大量入力テスト。単体テスト12件+統合テスト7件+エラー系6件+大量入力1件+バージョン1件、全28件PASS。
+
+## gf-diff Tier 2: unified diff format (`-u`) 出力
+- 完了日: 2026-03-14
+- 作業内容: `-u`フラグでunified diff format出力を追加。`buildHunks`関数でeditsリストからコンテキスト付きhunkを生成（デフォルト3行コンテキスト）。`printUnified`関数で`--- file1`/`+++ file2`ヘッダ＋`@@ -x,y +a,b @@` hunkヘッダ＋`-`/`+`/` `行を出力。近接した変更はhunkをマージ、離れた変更は分割。空ファイル・マルチバイト対応。単体テスト6件(buildHunks)+統合テスト8件(unified format)追加、累計42件ALL PASS。

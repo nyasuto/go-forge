@@ -45,9 +45,44 @@
 - three args: 引数3つ → exit 2
 - unknown flag: 不明フラグ → exit 2
 
+---
+
+## Tier 2: unified diff format (`-u`) 出力
+
+実行日: 2026-03-14
+
+### テスト概要
+
+| カテゴリ | テスト数 | 結果 |
+|----------|----------|------|
+| 単体テスト (buildHunks) | 6 | ALL PASS |
+| 統合テスト (unified format) | 8 | ALL PASS |
+| **Tier 2 追加分** | **14** | **ALL PASS** |
+| **累計** | **42** | **ALL PASS** |
+
+### テストケース詳細
+
+#### buildHunks 単体テスト
+- single change with context: 単一変更 → コンテキスト付き1 hunk
+- two distant changes become two hunks: 離れた2変更 → 2 hunks
+- insert at beginning: 先頭挿入 → 正しいhunkヘッダ
+- delete at end: 末尾削除 → 正しいhunkヘッダ
+- zero context: コンテキスト0 → 変更行のみ
+- nearby changes merge into single hunk: 近接変更 → 1 hunkにマージ
+
+#### unified format 統合テスト
+- basic unified diff: 基本的なunified出力（---/+++/@@ヘッダ、-/+行）
+- identical files no output: 同一ファイル → 出力なし、exit 0
+- insert lines unified: 行挿入のunified表示
+- delete lines unified: 行削除のunified表示
+- multibyte unified: マルチバイト文字のunified表示
+- file headers contain filenames: ファイル名がヘッダに含まれる
+- empty first file unified: 空ファイルからの挿入
+- empty second file unified: 全行削除
+
 ### 実行結果
 
 ```
 PASS
-ok  	gf-diff	0.332s
+ok  	gf-diff	0.344s
 ```

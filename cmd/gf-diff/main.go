@@ -19,6 +19,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("gf-diff", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	showVersion := fs.Bool("version", false, "show version")
+	unified := fs.Bool("u", false, "unified diff format")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -54,14 +55,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	for _, e := range edits {
-		switch e.op {
-		case opDelete:
-			fmt.Fprintf(stdout, "< %s\n", e.line)
-		case opInsert:
-			fmt.Fprintf(stdout, "> %s\n", e.line)
-		case opEqual:
-			fmt.Fprintf(stdout, "  %s\n", e.line)
+	if *unified {
+		printUnified(stdout, file1, file2, edits, 3)
+	} else {
+		for _, e := range edits {
+			switch e.op {
+			case opDelete:
+				fmt.Fprintf(stdout, "< %s\n", e.line)
+			case opInsert:
+				fmt.Fprintf(stdout, "> %s\n", e.line)
+			case opEqual:
+				fmt.Fprintf(stdout, "  %s\n", e.line)
+			}
 		}
 	}
 
@@ -217,4 +222,129 @@ func hasDifferences(edits []edit) bool {
 		}
 	}
 	return false
+}
+
+// hunk represents a unified diff hunk.
+type hunk struct {
+	oldStart int // 1-based line number in file1
+	oldCount int
+	newStart int // 1-based line number in file2
+	newCount int
+	lines    []edit
+}
+
+// buildHunks groups edits into hunks with the given context lines.
+func buildHunks(edits []edit, contextLines int) []hunk {
+	if len(edits) == 0 {
+		return nil
+	}
+
+	// Find indices of change edits (non-equal)
+	var changeIndices []int
+	for i, e := range edits {
+		if e.op != opEqual {
+			changeIndices = append(changeIndices, i)
+		}
+	}
+	if len(changeIndices) == 0 {
+		return nil
+	}
+
+	// Group changes into hunk ranges
+	type hunkRange struct {
+		start, end int // indices into edits slice (inclusive start, exclusive end)
+	}
+
+	var ranges []hunkRange
+	rangeStart := changeIndices[0] - contextLines
+	if rangeStart < 0 {
+		rangeStart = 0
+	}
+	rangeEnd := changeIndices[0] + 1
+
+	for i := 1; i < len(changeIndices); i++ {
+		idx := changeIndices[i]
+		// If this change is within context distance of previous range end, merge
+		if idx-rangeEnd <= 2*contextLines {
+			rangeEnd = idx + 1
+		} else {
+			// Finalize previous range with trailing context
+			end := rangeEnd + contextLines
+			if end > len(edits) {
+				end = len(edits)
+			}
+			ranges = append(ranges, hunkRange{rangeStart, end})
+
+			rangeStart = idx - contextLines
+			if rangeStart < 0 {
+				rangeStart = 0
+			}
+			rangeEnd = idx + 1
+		}
+	}
+	// Finalize last range
+	end := rangeEnd + contextLines
+	if end > len(edits) {
+		end = len(edits)
+	}
+	ranges = append(ranges, hunkRange{rangeStart, end})
+
+	// Build hunks from ranges
+	var hunks []hunk
+	for _, r := range ranges {
+		h := hunk{}
+		// Calculate line numbers by counting edits before this range
+		oldLine := 1
+		newLine := 1
+		for i := 0; i < r.start; i++ {
+			switch edits[i].op {
+			case opEqual:
+				oldLine++
+				newLine++
+			case opDelete:
+				oldLine++
+			case opInsert:
+				newLine++
+			}
+		}
+		h.oldStart = oldLine
+		h.newStart = newLine
+
+		for i := r.start; i < r.end; i++ {
+			h.lines = append(h.lines, edits[i])
+			switch edits[i].op {
+			case opEqual:
+				h.oldCount++
+				h.newCount++
+			case opDelete:
+				h.oldCount++
+			case opInsert:
+				h.newCount++
+			}
+		}
+		hunks = append(hunks, h)
+	}
+
+	return hunks
+}
+
+// printUnified outputs the diff in unified format.
+func printUnified(w io.Writer, file1, file2 string, edits []edit, contextLines int) {
+	fmt.Fprintf(w, "--- %s\n", file1)
+	fmt.Fprintf(w, "+++ %s\n", file2)
+
+	hunks := buildHunks(edits, contextLines)
+	for _, h := range hunks {
+		fmt.Fprintf(w, "@@ -%d,%d +%d,%d @@\n", h.oldStart, h.oldCount, h.newStart, h.newCount)
+		for _, e := range h.lines {
+			switch e.op {
+			case opEqual:
+				fmt.Fprintf(w, " %s\n", e.line)
+			case opDelete:
+				fmt.Fprintf(w, "-%s\n", e.line)
+			case opInsert:
+				fmt.Fprintf(w, "+%s\n", e.line)
+			}
+		}
+	}
 }
