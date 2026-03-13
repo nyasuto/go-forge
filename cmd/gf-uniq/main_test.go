@@ -142,6 +142,80 @@ func TestProcessReader(t *testing.T) {
 			opts:  uniqOptions{count: true, duplicates: true, ignoreCase: true},
 			want:  "",
 		},
+		// --global option
+		{
+			name:  "global: non-adjacent duplicates removed",
+			input: "a\nb\na\nc\nb\n",
+			opts:  uniqOptions{global: true},
+			want:  "a\nb\nc\n",
+		},
+		{
+			name:  "global: all unique",
+			input: "a\nb\nc\n",
+			opts:  uniqOptions{global: true},
+			want:  "a\nb\nc\n",
+		},
+		{
+			name:  "global: all same",
+			input: "x\nx\nx\n",
+			opts:  uniqOptions{global: true},
+			want:  "x\n",
+		},
+		{
+			name:  "global: empty input",
+			input: "",
+			opts:  uniqOptions{global: true},
+			want:  "",
+		},
+		{
+			name:  "global: single line",
+			input: "hello\n",
+			opts:  uniqOptions{global: true},
+			want:  "hello\n",
+		},
+		{
+			name:  "global: multibyte",
+			input: "あ\nい\nあ\nう\nい\n",
+			opts:  uniqOptions{global: true},
+			want:  "あ\nい\nう\n",
+		},
+		{
+			name:  "global: preserves first occurrence order",
+			input: "c\nb\na\nc\nb\na\n",
+			opts:  uniqOptions{global: true},
+			want:  "c\nb\na\n",
+		},
+		// --global combined options
+		{
+			name:  "global + count",
+			input: "a\nb\na\nc\nb\na\n",
+			opts:  uniqOptions{global: true, count: true},
+			want:  "      3 a\n      2 b\n      1 c\n",
+		},
+		{
+			name:  "global + duplicates",
+			input: "a\nb\na\nc\n",
+			opts:  uniqOptions{global: true, duplicates: true},
+			want:  "a\n",
+		},
+		{
+			name:  "global + ignore case",
+			input: "Hello\nworld\nhello\nWORLD\n",
+			opts:  uniqOptions{global: true, ignoreCase: true},
+			want:  "Hello\nworld\n",
+		},
+		{
+			name:  "global + count + duplicates",
+			input: "a\nb\na\nc\nb\n",
+			opts:  uniqOptions{global: true, count: true, duplicates: true},
+			want:  "      2 a\n      2 b\n",
+		},
+		{
+			name:  "global + count + duplicates + ignore case",
+			input: "Foo\nbar\nfoo\nBAR\nbaz\n",
+			opts:  uniqOptions{global: true, count: true, duplicates: true, ignoreCase: true},
+			want:  "      2 Foo\n      2 bar\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -412,6 +486,70 @@ func TestIntegration(t *testing.T) {
 			args:     []string{"-d"},
 			stdin:    "",
 			wantOut:  "",
+			wantCode: 0,
+		},
+		// Tier 3 integration tests: --global
+		{
+			name:     "--global removes non-adjacent duplicates",
+			args:     []string{"--global"},
+			stdin:    "a\nb\na\nc\nb\n",
+			wantOut:  "a\nb\nc\n",
+			wantCode: 0,
+		},
+		{
+			name:     "--global with file input",
+			args:     []string{"--global"},
+			file:     "x\ny\nz\nx\ny\n",
+			wantOut:  "x\ny\nz\n",
+			wantCode: 0,
+		},
+		{
+			name:     "--global -c count",
+			args:     []string{"--global", "-c"},
+			stdin:    "a\nb\na\nc\nb\na\n",
+			wantOut:  "      3 a\n      2 b\n      1 c\n",
+			wantCode: 0,
+		},
+		{
+			name:     "--global -d duplicates only",
+			args:     []string{"--global", "-d"},
+			stdin:    "a\nb\nc\na\n",
+			wantOut:  "a\n",
+			wantCode: 0,
+		},
+		{
+			name:     "--global -i case insensitive",
+			args:     []string{"--global", "-i"},
+			stdin:    "Hello\nworld\nhello\nWORLD\n",
+			wantOut:  "Hello\nworld\n",
+			wantCode: 0,
+		},
+		{
+			name:     "--global -c -d -i all combined",
+			args:     []string{"--global", "-c", "-d", "-i"},
+			stdin:    "Foo\nbar\nfoo\nBAR\nbaz\n",
+			wantOut:  "      2 Foo\n      2 bar\n",
+			wantCode: 0,
+		},
+		{
+			name:     "--global empty input",
+			args:     []string{"--global"},
+			stdin:    "",
+			wantOut:  "",
+			wantCode: 0,
+		},
+		{
+			name:     "--global multibyte",
+			args:     []string{"--global"},
+			stdin:    "日本\n英語\n日本\n",
+			wantOut:  "日本\n英語\n",
+			wantCode: 0,
+		},
+		{
+			name:     "--global large input",
+			args:     []string{"--global"},
+			stdin:    strings.Repeat("a\nb\n", 5000),
+			wantOut:  "a\nb\n",
 			wantCode: 0,
 		},
 	}

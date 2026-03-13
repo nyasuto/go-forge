@@ -15,6 +15,7 @@ type uniqOptions struct {
 	count      bool
 	duplicates bool
 	ignoreCase bool
+	global     bool
 }
 
 func main() {
@@ -22,6 +23,7 @@ func main() {
 	optC := flag.Bool("c", false, "prefix lines by the number of occurrences")
 	optD := flag.Bool("d", false, "only print duplicate lines")
 	optI := flag.Bool("i", false, "ignore differences in case when comparing")
+	optGlobal := flag.Bool("global", false, "remove non-adjacent duplicates too")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-uniq [OPTIONS] [FILE...]\n")
 		fmt.Fprintf(os.Stderr, "Filter adjacent matching lines.\n\n")
@@ -38,6 +40,7 @@ func main() {
 		count:      *optC,
 		duplicates: *optD,
 		ignoreCase: *optI,
+		global:     *optGlobal,
 	}
 
 	args := flag.Args()
@@ -84,6 +87,11 @@ func compareLine(a, b string, ignoreCase bool) bool {
 }
 
 func processReader(r io.Reader, w *bufio.Writer, opts uniqOptions) {
+	if opts.global {
+		processReaderGlobal(r, w, opts)
+		return
+	}
+
 	scanner := bufio.NewScanner(r)
 	prev := ""
 	first := true
@@ -115,6 +123,48 @@ func processReader(r io.Reader, w *bufio.Writer, opts uniqOptions) {
 		}
 	}
 	flush()
+}
+
+func processReaderGlobal(r io.Reader, w *bufio.Writer, opts uniqOptions) {
+	scanner := bufio.NewScanner(r)
+
+	type entry struct {
+		line  string
+		count int
+		order int
+	}
+
+	seen := make(map[string]*entry)
+	var keys []string
+	idx := 0
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		key := line
+		if opts.ignoreCase {
+			key = strings.ToLower(line)
+		}
+
+		if e, ok := seen[key]; ok {
+			e.count++
+		} else {
+			seen[key] = &entry{line: line, count: 1, order: idx}
+			keys = append(keys, key)
+			idx++
+		}
+	}
+
+	for _, key := range keys {
+		e := seen[key]
+		if opts.duplicates && e.count < 2 {
+			continue
+		}
+		if opts.count {
+			fmt.Fprintf(w, "%7d %s\n", e.count, e.line)
+		} else {
+			fmt.Fprintln(w, e.line)
+		}
+	}
 }
 
 func unwrapPathError(err error) error {

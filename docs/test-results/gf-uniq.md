@@ -100,3 +100,47 @@
 - -d: 2回以上出現した行のみ出力
 - -i: `strings.EqualFold`による大文字小文字無視比較
 - 全オプション組み合わせ（-c -d、-c -i、-d -i、-c -d -i）動作確認済み
+
+---
+
+## Tier 3: --global 非隣接重複除去モード
+
+### 実行日: 2026-03-14
+
+### 単体テスト (TestProcessReader) 追加: 12件
+
+| # | テストケース | 結果 |
+|---|------------|------|
+| 22 | global: non-adjacent duplicates removed | PASS |
+| 23 | global: all unique | PASS |
+| 24 | global: all same | PASS |
+| 25 | global: empty input | PASS |
+| 26 | global: single line | PASS |
+| 27 | global: multibyte | PASS |
+| 28 | global: preserves first occurrence order | PASS |
+| 29 | global + count | PASS |
+| 30 | global + duplicates | PASS |
+| 31 | global + ignore case | PASS |
+| 32 | global + count + duplicates | PASS |
+| 33 | global + count + duplicates + ignore case | PASS |
+
+### 統合テスト (TestIntegration) 追加: 9件
+
+| # | テストケース | 結果 |
+|---|------------|------|
+| 18 | --global removes non-adjacent duplicates | PASS |
+| 19 | --global with file input | PASS |
+| 20 | --global -c count | PASS |
+| 21 | --global -d duplicates only | PASS |
+| 22 | --global -i case insensitive | PASS |
+| 23 | --global -c -d -i all combined | PASS |
+| 24 | --global empty input | PASS |
+| 25 | --global multibyte | PASS |
+| 26 | --global large input | PASS |
+
+### 結果サマリ
+- 累計69件 ALL PASS（単体33件 + run10件 + 統合26件）
+- --global: mapで全行を追跡し、非隣接重複も除去
+- 初出順序を保持（出現順にスライスで管理）
+- -c/-d/-i との全組み合わせ動作確認済み
+- 大量入力（10000行）でも正常動作
