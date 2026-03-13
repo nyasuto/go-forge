@@ -75,3 +75,73 @@
 | -nで複数ファイル連番 | 正常系 | PASS |
 | -sで連続空行圧縮 | 正常系 | PASS |
 | -n -sの組み合わせ | 正常系 | PASS |
+
+## Tier 3
+
+- 実行日: 2026-03-14
+- 結果: **ALL PASS**
+
+### テストケース一覧
+
+#### 単体テスト (TestHighlightLine) — シンタックスハイライト
+
+| テスト名 | 種別 | 結果 |
+|-----------|------|------|
+| Goキーワード | 正常系 | PASS |
+| Go文字列リテラル | 正常系 | PASS |
+| Goコメント | 正常系 | PASS |
+| Go数値 | 正常系 | PASS |
+| Go行内コメント | 正常系 | PASS |
+| Pythonキーワード | 正常系 | PASS |
+| Pythonハッシュコメント | 正常系 | PASS |
+| Python文字列内のハッシュ | 正常系 | PASS |
+| JSキーワード | 正常系 | PASS |
+| JSONキーと値 | 正常系 | PASS |
+| JSON数値 | 正常系 | PASS |
+| JSONブール | 正常系 | PASS |
+| JSONnull | 正常系 | PASS |
+| YAMLキーと値 | 正常系 | PASS |
+| YAMLコメント | 正常系 | PASS |
+| YAMLブール値 | 正常系 | PASS |
+| YAML数値 | 正常系 | PASS |
+| YAML文字列値 | 正常系 | PASS |
+| 空行 | エッジケース | PASS |
+| マルチバイト文字列 | エッジケース | PASS |
+| yml拡張子 | エッジケース | PASS |
+
+#### 単体テスト (TestDetectLanguage) — 拡張子検出
+
+| テスト名 | 種別 | 結果 |
+|-----------|------|------|
+| main.go | 正常系 | PASS |
+| script.py | 正常系 | PASS |
+| app.js | 正常系 | PASS |
+| config.json | 正常系 | PASS |
+| config.yaml | 正常系 | PASS |
+| config.yml | 正常系 | PASS |
+| readme.txt | 異常系 | PASS |
+| noext | 異常系 | PASS |
+| FILE.GO | エッジケース | PASS |
+| path/to/main.go | エッジケース | PASS |
+
+#### 単体テスト (TestCatWithHighlight) — ハイライト付きcat
+
+| テスト名 | 種別 | 結果 |
+|-----------|------|------|
+| color=always でGoコード | 正常系 | PASS |
+
+#### 単体テスト (TestCatColorNever) — ハイライト無効
+
+| テスト名 | 種別 | 結果 |
+|-----------|------|------|
+| color=never でGoコード | 正常系 | PASS |
+
+#### 統合テスト (TestCatFile) — Tier 3追加分
+
+| テスト名 | 種別 | 結果 |
+|-----------|------|------|
+| --color=always でGoファイル | 正常系 | PASS |
+| --color=always でJSONファイル | 正常系 | PASS |
+| --color=never でGoファイル | 正常系 | PASS |
+| --color=always でtxtファイル（ハイライトなし） | エッジケース | PASS |
+| --color=always -n でGoファイル | 正常系 | PASS |

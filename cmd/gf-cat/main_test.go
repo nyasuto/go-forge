@@ -220,6 +220,220 @@ func TestCatNumberAndSqueeze(t *testing.T) {
 	}
 }
 
+// highlightLine関数の単体テスト（Tier 3: シンタックスハイライト）
+func TestHighlightLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		lang string
+		want string
+	}{
+		// Go — 正常系
+		{
+			name: "Goキーワード",
+			line: "func main() {",
+			lang: ".go",
+			want: colorKeyword + "func" + colorReset + " main() {",
+		},
+		{
+			name: "Go文字列リテラル",
+			line: `x := "hello"`,
+			lang: ".go",
+			want: "x := " + colorString + `"hello"` + colorReset,
+		},
+		{
+			name: "Goコメント",
+			line: "// this is a comment",
+			lang: ".go",
+			want: colorComment + "// this is a comment" + colorReset,
+		},
+		{
+			name: "Go数値",
+			line: "x := 42",
+			lang: ".go",
+			want: "x := " + colorNumber + "42" + colorReset,
+		},
+		{
+			name: "Go行内コメント",
+			line: `x := 1 // inline`,
+			lang: ".go",
+			want: "x := " + colorNumber + "1" + colorReset + " " + colorComment + "// inline" + colorReset,
+		},
+		// Python — 正常系
+		{
+			name: "Pythonキーワード",
+			line: "def hello():",
+			lang: ".py",
+			want: colorKeyword + "def" + colorReset + " hello():",
+		},
+		{
+			name: "Pythonハッシュコメント",
+			line: "# comment",
+			lang: ".py",
+			want: colorComment + "# comment" + colorReset,
+		},
+		{
+			name: "Python文字列内のハッシュ",
+			line: `x = "# not a comment"`,
+			lang: ".py",
+			want: "x = " + colorString + `"# not a comment"` + colorReset,
+		},
+		// JavaScript — 正常系
+		{
+			name: "JSキーワード",
+			line: "const x = 10;",
+			lang: ".js",
+			want: colorKeyword + "const" + colorReset + " x = " + colorNumber + "10" + colorReset + ";",
+		},
+		// JSON — 正常系
+		{
+			name: "JSONキーと値",
+			line: `  "name": "GoForge",`,
+			lang: ".json",
+			want: "  " + colorKey + `"name"` + colorReset + ": " + colorString + `"GoForge"` + colorReset + ",",
+		},
+		{
+			name: "JSON数値",
+			line: `  "count": 42,`,
+			lang: ".json",
+			want: "  " + colorKey + `"count"` + colorReset + ": " + colorNumber + "42" + colorReset + ",",
+		},
+		{
+			name: "JSONブール",
+			line: `  "active": true,`,
+			lang: ".json",
+			want: "  " + colorKey + `"active"` + colorReset + ": " + colorBool + "true" + colorReset + ",",
+		},
+		{
+			name: "JSONnull",
+			line: `  "data": null`,
+			lang: ".json",
+			want: "  " + colorKey + `"data"` + colorReset + ": " + colorBool + "null" + colorReset,
+		},
+		// YAML — 正常系
+		{
+			name: "YAMLキーと値",
+			line: "name: GoForge",
+			lang: ".yaml",
+			want: colorKey + "name" + colorReset + ": GoForge",
+		},
+		{
+			name: "YAMLコメント",
+			line: "# this is a comment",
+			lang: ".yaml",
+			want: colorComment + "# this is a comment" + colorReset,
+		},
+		{
+			name: "YAMLブール値",
+			line: "active: true",
+			lang: ".yaml",
+			want: colorKey + "active" + colorReset + ": " + colorBool + "true" + colorReset,
+		},
+		{
+			name: "YAML数値",
+			line: "count: 42",
+			lang: ".yaml",
+			want: colorKey + "count" + colorReset + ": " + colorNumber + "42" + colorReset,
+		},
+		{
+			name: "YAML文字列値",
+			line: `message: "hello world"`,
+			lang: ".yaml",
+			want: colorKey + "message" + colorReset + ": " + colorString + `"hello world"` + colorReset,
+		},
+		// エッジケース
+		{
+			name: "空行",
+			line: "",
+			lang: ".go",
+			want: "",
+		},
+		{
+			name: "マルチバイト文字列",
+			line: `name := "日本語"`,
+			lang: ".go",
+			want: "name := " + colorString + `"日本語"` + colorReset,
+		},
+		{
+			name: "yml拡張子",
+			line: "key: value",
+			lang: ".yml",
+			want: colorKey + "key" + colorReset + ": value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := highlightLine(tt.line, tt.lang)
+			if got != tt.want {
+				t.Errorf("highlightLine(%q, %q)\n got = %q\nwant = %q", tt.line, tt.lang, got, tt.want)
+			}
+		})
+	}
+}
+
+// detectLanguage関数の単体テスト
+func TestDetectLanguage(t *testing.T) {
+	tests := []struct {
+		filename string
+		want     string
+	}{
+		{"main.go", ".go"},
+		{"script.py", ".py"},
+		{"app.js", ".js"},
+		{"config.json", ".json"},
+		{"config.yaml", ".yaml"},
+		{"config.yml", ".yml"},
+		{"readme.txt", ""},
+		{"noext", ""},
+		{"FILE.GO", ".go"},
+		{"path/to/main.go", ".go"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.filename, func(t *testing.T) {
+			got := detectLanguage(tt.filename)
+			if got != tt.want {
+				t.Errorf("detectLanguage(%q) = %q, want %q", tt.filename, got, tt.want)
+			}
+		})
+	}
+}
+
+// cat関数の単体テスト（Tier 3: ハイライト付き出力）
+func TestCatWithHighlight(t *testing.T) {
+	goCode := "func main() {\n}\n"
+	wantGo := colorKeyword + "func" + colorReset + " main() {\n}\n"
+
+	r := strings.NewReader(goCode)
+	var buf bytes.Buffer
+	opts := &options{colorMode: "always", lang: ".go"}
+	err := cat(r, &buf, opts)
+	if err != nil {
+		t.Fatalf("cat() error = %v", err)
+	}
+	if got := buf.String(); got != wantGo {
+		t.Errorf("cat() with highlight\n got = %q\nwant = %q", got, wantGo)
+	}
+}
+
+// cat関数 — colorMode="never"でハイライトなし
+func TestCatColorNever(t *testing.T) {
+	goCode := "func main() {\n}\n"
+	want := "func main() {\n}\n"
+
+	r := strings.NewReader(goCode)
+	var buf bytes.Buffer
+	opts := &options{colorMode: "never", lang: ".go"}
+	err := cat(r, &buf, opts)
+	if err != nil {
+		t.Fatalf("cat() error = %v", err)
+	}
+	if got := buf.String(); got != want {
+		t.Errorf("cat() with color=never\n got = %q\nwant = %q", got, want)
+	}
+}
+
 // ファイル読み取りの統合テスト
 func TestCatFile(t *testing.T) {
 	// テスト用の一時ファイル作成
@@ -228,9 +442,13 @@ func TestCatFile(t *testing.T) {
 	file1 := filepath.Join(dir, "file1.txt")
 	file2 := filepath.Join(dir, "file2.txt")
 	fileBlank := filepath.Join(dir, "blank.txt")
+	fileGo := filepath.Join(dir, "sample.go")
+	fileJSON := filepath.Join(dir, "sample.json")
 	os.WriteFile(file1, []byte("content of file1\n"), 0644)
 	os.WriteFile(file2, []byte("content of file2\n"), 0644)
 	os.WriteFile(fileBlank, []byte("a\n\n\n\nb\n"), 0644)
+	os.WriteFile(fileGo, []byte("package main\n"), 0644)
+	os.WriteFile(fileJSON, []byte("{\n  \"key\": \"value\"\n}\n"), 0644)
 
 	// バイナリをビルド
 	binary := filepath.Join(dir, "gf-cat")
@@ -316,6 +534,35 @@ func TestCatFile(t *testing.T) {
 			name: "-n -sの組み合わせ",
 			args: []string{"-n", "-s", fileBlank},
 			want: "     1\ta\n     2\t\n     3\tb\n",
+		},
+		// Tier 3: --color=always でハイライト
+		{
+			name: "--color=always でGoファイル",
+			args: []string{"-color=always", fileGo},
+			want: colorKeyword + "package" + colorReset + " main\n",
+		},
+		{
+			name: "--color=always でJSONファイル",
+			args: []string{"-color=always", fileJSON},
+			want: "{\n  " + colorKey + `"key"` + colorReset + ": " + colorString + `"value"` + colorReset + "\n}\n",
+		},
+		// Tier 3: --color=never でハイライトなし（.goファイルでも）
+		{
+			name: "--color=never でGoファイル",
+			args: []string{"-color=never", fileGo},
+			want: "package main\n",
+		},
+		// Tier 3: txtファイルはハイライト対象外
+		{
+			name: "--color=always でtxtファイル（ハイライトなし）",
+			args: []string{"-color=always", file1},
+			want: "content of file1\n",
+		},
+		// Tier 3: --color=always + -n の組み合わせ
+		{
+			name: "--color=always -n でGoファイル",
+			args: []string{"-color=always", "-n", fileGo},
+			want: "     1\t" + colorKeyword + "package" + colorReset + " main\n",
 		},
 	}
 
