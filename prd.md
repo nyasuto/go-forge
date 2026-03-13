@@ -101,7 +101,7 @@ goforge/
 
 #### gf-wc（カウント）
 
-- [ ] Tier 1: `cmd/gf-wc/` 作成（go.mod初期化、go.workに追加）。行数・単語数・バイト数カウント、stdin対応。テスト作成・通過。テスト結果を `docs/test-results/gf-wc.md` に記録。
+- [x] Tier 1: `cmd/gf-wc/` 作成（go.mod初期化、go.workに追加）。行数・単語数・バイト数カウント、stdin対応。テスト作成・通過。テスト結果を `docs/test-results/gf-wc.md` に記録。
 - [ ] Tier 2: `-m` 文字数（rune対応）、複数ファイル合計行の表示。テスト追加・通過。テスト結果を更新。
 - [ ] Tier 3: `--json` JSON形式出力。テスト追加・通過。テスト結果を更新。
 

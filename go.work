@@ -4,4 +4,5 @@ use (
 	./cmd/gf-cat
 	./cmd/gf-head
 	./cmd/gf-tail
+	./cmd/gf-wc
 )
