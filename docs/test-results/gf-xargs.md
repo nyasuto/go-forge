@@ -43,3 +43,37 @@
 - stdin pipe with printf
 - default echo no command specified
 - multibyte echo（マルチバイト文字のecho）
+
+## Tier 2: -n 最大引数数指定・-P 並列実行数指定
+
+**実行日**: 2026-03-14
+**結果**: ALL PASS (累計48件)
+
+### 追加テスト内訳
+
+#### 単体テスト: splitBatches (6件)
+- n=0 single batch（全アイテム1バッチ）
+- n=1（1個ずつ分割）
+- n=2 even（偶数個の均等分割）
+- n=2 odd（奇数個の端数バッチ）
+- n=5 larger than items（アイテム数より大きいn）
+- n=3 exact（ちょうど割り切れる）
+
+#### 単体テスト: runWithN (5件)
+- n=1 splits into individual calls（1個ずつ実行）
+- n=2 splits into batches（2個ずつバッチ実行）
+- n=0 means all in one call（全引数1回実行）
+- n with extra command args（コマンド追加引数との組み合わせ）
+- negative n（負の値→exit 2）
+
+#### 単体テスト: runWithP (5件)
+- P=2 parallel execution（2並列実行）
+- P=4 more workers than batches（ワーカー数>バッチ数）
+- P=0 invalid（0→exit 2）
+- P with error propagation（エラー伝播）
+- P=1 sequential with n（逐次+バッチ分割）
+
+#### 統合テスト追加 (3件)
+- n=1 real echo（実echoで1個ずつ実行）
+- n=2 real echo batches（実echoで2個ずつバッチ）
+- P=2 real parallel echo（実echoで2並列、順序不問で全出力確認）

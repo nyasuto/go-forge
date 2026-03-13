@@ -237,6 +237,178 @@ func TestEdgeCases(t *testing.T) {
 	})
 }
 
+func TestSplitBatches(t *testing.T) {
+	tests := []struct {
+		name  string
+		items []string
+		n     int
+		want  [][]string
+	}{
+		{"n=0 single batch", []string{"a", "b", "c"}, 0, [][]string{{"a", "b", "c"}}},
+		{"n=1", []string{"a", "b", "c"}, 1, [][]string{{"a"}, {"b"}, {"c"}}},
+		{"n=2 even", []string{"a", "b", "c", "d"}, 2, [][]string{{"a", "b"}, {"c", "d"}}},
+		{"n=2 odd", []string{"a", "b", "c"}, 2, [][]string{{"a", "b"}, {"c"}}},
+		{"n=5 larger than items", []string{"a", "b"}, 5, [][]string{{"a", "b"}}},
+		{"n=3 exact", []string{"a", "b", "c"}, 3, [][]string{{"a", "b", "c"}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitBatches(tt.items, tt.n)
+			if len(got) != len(tt.want) {
+				t.Fatalf("splitBatches len = %d, want %d: %v", len(got), len(tt.want), got)
+			}
+			for i := range got {
+				if len(got[i]) != len(tt.want[i]) {
+					t.Fatalf("batch[%d] len = %d, want %d", i, len(got[i]), len(tt.want[i]))
+				}
+				for j := range got[i] {
+					if got[i][j] != tt.want[i][j] {
+						t.Errorf("batch[%d][%d] = %q, want %q", i, j, got[i][j], tt.want[i][j])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRunWithN(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		stdin     string
+		wantCode  int
+		wantCalls int
+		wantArgs  [][]string
+	}{
+		{
+			name:      "n=1 splits into individual calls",
+			args:      []string{"-n", "1", "echo"},
+			stdin:     "a\nb\nc\n",
+			wantCode:  0,
+			wantCalls: 3,
+			wantArgs:  [][]string{{"a"}, {"b"}, {"c"}},
+		},
+		{
+			name:      "n=2 splits into batches",
+			args:      []string{"-n", "2", "echo"},
+			stdin:     "a b c d e\n",
+			wantCode:  0,
+			wantCalls: 3,
+			wantArgs:  [][]string{{"a", "b"}, {"c", "d"}, {"e"}},
+		},
+		{
+			name:      "n=0 means all in one call",
+			args:      []string{"-n", "0", "echo"},
+			stdin:     "a b c\n",
+			wantCode:  0,
+			wantCalls: 1,
+			wantArgs:  [][]string{{"a", "b", "c"}},
+		},
+		{
+			name:      "n with extra command args",
+			args:      []string{"-n", "2", "grep", "-l"},
+			stdin:     "f1 f2 f3\n",
+			wantCode:  0,
+			wantCalls: 2,
+			wantArgs:  [][]string{{"-l", "f1", "f2"}, {"-l", "f3"}},
+		},
+		{
+			name:     "negative n",
+			args:     []string{"-n", "-1", "echo"},
+			stdin:    "a\n",
+			wantCode: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockExecutor{}
+			var stdout, stderr bytes.Buffer
+			code := run(tt.args, strings.NewReader(tt.stdin), &stdout, &stderr, mock)
+
+			if code != tt.wantCode {
+				t.Fatalf("exit code = %d, want %d (stderr: %s)", code, tt.wantCode, stderr.String())
+			}
+			if tt.wantCode != 0 {
+				return
+			}
+
+			if len(mock.calls) != tt.wantCalls {
+				t.Fatalf("calls = %d, want %d: %v", len(mock.calls), tt.wantCalls, mock.calls)
+			}
+
+			for i, wantArgs := range tt.wantArgs {
+				gotArgs := mock.calls[i].Args
+				if len(gotArgs) != len(wantArgs) {
+					t.Fatalf("call[%d] args = %v, want %v", i, gotArgs, wantArgs)
+				}
+				for j := range gotArgs {
+					if gotArgs[j] != wantArgs[j] {
+						t.Errorf("call[%d] args[%d] = %q, want %q", i, j, gotArgs[j], wantArgs[j])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRunWithP(t *testing.T) {
+	t.Run("P=2 parallel execution", func(t *testing.T) {
+		mock := &mockExecutor{}
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-n", "1", "-P", "2", "echo"}, strings.NewReader("a\nb\nc\n"), &stdout, &stderr, mock)
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+		}
+		if len(mock.calls) != 3 {
+			t.Fatalf("calls = %d, want 3", len(mock.calls))
+		}
+	})
+
+	t.Run("P=4 more workers than batches", func(t *testing.T) {
+		mock := &mockExecutor{}
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-n", "1", "-P", "4", "echo"}, strings.NewReader("a\nb\n"), &stdout, &stderr, mock)
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0", code)
+		}
+		if len(mock.calls) != 2 {
+			t.Fatalf("calls = %d, want 2", len(mock.calls))
+		}
+	})
+
+	t.Run("P=0 invalid", func(t *testing.T) {
+		mock := &mockExecutor{}
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-P", "0", "echo"}, strings.NewReader("a\n"), &stdout, &stderr, mock)
+		if code != 2 {
+			t.Fatalf("exit code = %d, want 2", code)
+		}
+	})
+
+	t.Run("P with error propagation", func(t *testing.T) {
+		mock := &mockExecutor{err: fmt.Errorf("fail")}
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-n", "1", "-P", "2", "cmd"}, strings.NewReader("a\nb\n"), &stdout, &stderr, mock)
+		if code != 1 {
+			t.Fatalf("exit code = %d, want 1", code)
+		}
+	})
+
+	t.Run("P=1 sequential with n", func(t *testing.T) {
+		mock := &mockExecutor{}
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-n", "2", "-P", "1", "echo"}, strings.NewReader("a b c d\n"), &stdout, &stderr, mock)
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0", code)
+		}
+		if len(mock.calls) != 2 {
+			t.Fatalf("calls = %d, want 2", len(mock.calls))
+		}
+	})
+}
+
 // Integration-style tests using real executor
 func TestIntegration(t *testing.T) {
 	t.Run("echo with real executor", func(t *testing.T) {
@@ -323,6 +495,58 @@ func TestIntegration(t *testing.T) {
 		got := strings.TrimSpace(stdout.String())
 		if got != "日本語 テスト" {
 			t.Errorf("output = %q, want %q", got, "日本語 テスト")
+		}
+	})
+
+	t.Run("n=1 real echo", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-n", "1", "echo"}, strings.NewReader("hello world\n"), &stdout, &stderr, realExecutor{})
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+		}
+		lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+		if len(lines) != 2 {
+			t.Fatalf("lines = %d, want 2: %v", len(lines), lines)
+		}
+		if strings.TrimSpace(lines[0]) != "hello" {
+			t.Errorf("line[0] = %q, want %q", lines[0], "hello")
+		}
+		if strings.TrimSpace(lines[1]) != "world" {
+			t.Errorf("line[1] = %q, want %q", lines[1], "world")
+		}
+	})
+
+	t.Run("n=2 real echo batches", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-n", "2", "echo"}, strings.NewReader("a b c d e\n"), &stdout, &stderr, realExecutor{})
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0", code)
+		}
+		lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+		if len(lines) != 3 {
+			t.Fatalf("lines = %d, want 3: %v", len(lines), lines)
+		}
+	})
+
+	t.Run("P=2 real parallel echo", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-n", "1", "-P", "2", "echo"}, strings.NewReader("a\nb\nc\n"), &stdout, &stderr, realExecutor{})
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+		}
+		lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+		if len(lines) != 3 {
+			t.Fatalf("lines = %d, want 3: %v", len(lines), lines)
+		}
+		// Order may vary due to parallelism, but all items should be present.
+		got := make(map[string]bool)
+		for _, l := range lines {
+			got[strings.TrimSpace(l)] = true
+		}
+		for _, want := range []string{"a", "b", "c"} {
+			if !got[want] {
+				t.Errorf("missing output %q in %v", want, lines)
+			}
 		}
 	})
 }
