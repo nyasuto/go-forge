@@ -46,3 +46,57 @@
 - 正常系: 隣接重複除去、stdin対応、ファイル入力、複数ファイル
 - 異常系: 存在しないファイル、有効+無効ファイル混在
 - エッジケース: 空入力、大量重複行(10000行)、マルチバイト文字、空行の重複、非隣接重複の保持
+
+---
+
+## Tier 2: -c 出現回数カウント、-d 重複行のみ表示、-i 大文字小文字無視
+
+### 実行日: 2026-03-14
+
+### 単体テスト (TestProcessReader) 追加: 14件
+
+| # | テストケース | 結果 |
+|---|------------|------|
+| 8 | count: adjacent duplicates | PASS |
+| 9 | count: no duplicates | PASS |
+| 10 | count: single line | PASS |
+| 11 | duplicates: show only duplicated lines | PASS |
+| 12 | duplicates: no duplicates means no output | PASS |
+| 13 | duplicates: all same | PASS |
+| 14 | ignore case: adjacent case-different duplicates | PASS |
+| 15 | ignore case: no match without -i | PASS |
+| 16 | ignore case: multibyte | PASS |
+| 17 | count + duplicates | PASS |
+| 18 | count + ignore case | PASS |
+| 19 | duplicates + ignore case | PASS |
+| 20 | all three options | PASS |
+| 21 | empty input with options | PASS |
+
+### 単体テスト (TestRun) 追加: 3件
+
+| # | テストケース | 結果 |
+|---|------------|------|
+| 8 | count option via run | PASS |
+| 9 | duplicates option via run | PASS |
+| 10 | ignore case option via run | PASS |
+
+### 統合テスト (TestIntegration) 追加: 9件
+
+| # | テストケース | 結果 |
+|---|------------|------|
+| 9 | -c count flag | PASS |
+| 10 | -d duplicates only flag | PASS |
+| 11 | -i case insensitive flag | PASS |
+| 12 | -c -d combined | PASS |
+| 13 | -c -i combined | PASS |
+| 14 | -d -i combined | PASS |
+| 15 | -c -d -i all combined | PASS |
+| 16 | -c with file input | PASS |
+| 17 | -d with empty input | PASS |
+
+### 結果サマリ
+- 累計48件 ALL PASS（単体21件 + run10件 + 統合17件）
+- -c: 出現回数を`%7d`フォーマットでプレフィックス表示
+- -d: 2回以上出現した行のみ出力
+- -i: `strings.EqualFold`による大文字小文字無視比較
+- 全オプション組み合わせ（-c -d、-c -i、-d -i、-c -d -i）動作確認済み

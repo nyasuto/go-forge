@@ -6,12 +6,22 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 const version = "0.1.0"
 
+type uniqOptions struct {
+	count      bool
+	duplicates bool
+	ignoreCase bool
+}
+
 func main() {
 	showVersion := flag.Bool("version", false, "show version")
+	optC := flag.Bool("c", false, "prefix lines by the number of occurrences")
+	optD := flag.Bool("d", false, "only print duplicate lines")
+	optI := flag.Bool("i", false, "ignore differences in case when comparing")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-uniq [OPTIONS] [FILE...]\n")
 		fmt.Fprintf(os.Stderr, "Filter adjacent matching lines.\n\n")
@@ -24,24 +34,30 @@ func main() {
 		os.Exit(0)
 	}
 
+	opts := uniqOptions{
+		count:      *optC,
+		duplicates: *optD,
+		ignoreCase: *optI,
+	}
+
 	args := flag.Args()
-	exitCode := run(args, os.Stdin, os.Stdout, os.Stderr)
+	exitCode := run(args, os.Stdin, os.Stdout, os.Stderr, opts)
 	os.Exit(exitCode)
 }
 
-func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer, opts uniqOptions) int {
 	w := bufio.NewWriter(stdout)
 	defer w.Flush()
 
 	if len(args) == 0 {
-		processReader(stdin, w)
+		processReader(stdin, w, opts)
 		return 0
 	}
 
 	hasError := false
 	for _, arg := range args {
 		if arg == "-" {
-			processReader(stdin, w)
+			processReader(stdin, w, opts)
 			continue
 		}
 		f, err := os.Open(arg)
@@ -50,7 +66,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 			hasError = true
 			continue
 		}
-		processReader(f, w)
+		processReader(f, w, opts)
 		f.Close()
 	}
 
@@ -60,18 +76,45 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	return 0
 }
 
-func processReader(r io.Reader, w *bufio.Writer) {
+func compareLine(a, b string, ignoreCase bool) bool {
+	if ignoreCase {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+func processReader(r io.Reader, w *bufio.Writer, opts uniqOptions) {
 	scanner := bufio.NewScanner(r)
 	prev := ""
 	first := true
-	for scanner.Scan() {
-		line := scanner.Text()
-		if first || line != prev {
-			fmt.Fprintln(w, line)
-			prev = line
-			first = false
+	count := 0
+
+	flush := func() {
+		if first {
+			return
+		}
+		if opts.duplicates && count < 2 {
+			return
+		}
+		if opts.count {
+			fmt.Fprintf(w, "%7d %s\n", count, prev)
+		} else {
+			fmt.Fprintln(w, prev)
 		}
 	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if first || !compareLine(line, prev, opts.ignoreCase) {
+			flush()
+			prev = line
+			count = 1
+			first = false
+		} else {
+			count++
+		}
+	}
+	flush()
 }
 
 func unwrapPathError(err error) error {

@@ -16,6 +16,7 @@ func TestProcessReader(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
+		opts  uniqOptions
 		want  string
 	}{
 		{
@@ -53,13 +54,101 @@ func TestProcessReader(t *testing.T) {
 			input: "\n\n\nabc\nabc\n\n",
 			want:  "\nabc\n\n",
 		},
+		// -c count option
+		{
+			name:  "count: adjacent duplicates",
+			input: "aaa\naaa\nbbb\nbbb\nbbb\nccc\n",
+			opts:  uniqOptions{count: true},
+			want:  "      2 aaa\n      3 bbb\n      1 ccc\n",
+		},
+		{
+			name:  "count: no duplicates",
+			input: "a\nb\nc\n",
+			opts:  uniqOptions{count: true},
+			want:  "      1 a\n      1 b\n      1 c\n",
+		},
+		{
+			name:  "count: single line",
+			input: "only\n",
+			opts:  uniqOptions{count: true},
+			want:  "      1 only\n",
+		},
+		// -d duplicates only
+		{
+			name:  "duplicates: show only duplicated lines",
+			input: "aaa\naaa\nbbb\nccc\nccc\nccc\n",
+			opts:  uniqOptions{duplicates: true},
+			want:  "aaa\nccc\n",
+		},
+		{
+			name:  "duplicates: no duplicates means no output",
+			input: "a\nb\nc\n",
+			opts:  uniqOptions{duplicates: true},
+			want:  "",
+		},
+		{
+			name:  "duplicates: all same",
+			input: "x\nx\nx\n",
+			opts:  uniqOptions{duplicates: true},
+			want:  "x\n",
+		},
+		// -i ignore case
+		{
+			name:  "ignore case: adjacent case-different duplicates",
+			input: "Hello\nhello\nHELLO\nWorld\n",
+			opts:  uniqOptions{ignoreCase: true},
+			want:  "Hello\nWorld\n",
+		},
+		{
+			name:  "ignore case: no match without -i",
+			input: "Hello\nhello\n",
+			opts:  uniqOptions{ignoreCase: false},
+			want:  "Hello\nhello\n",
+		},
+		{
+			name:  "ignore case: multibyte",
+			input: "Straße\nstraße\nSTRASSE\n",
+			opts:  uniqOptions{ignoreCase: true},
+			want:  "Straße\nSTRASSE\n",
+		},
+		// combined options
+		{
+			name:  "count + duplicates",
+			input: "a\na\nb\nc\nc\nc\n",
+			opts:  uniqOptions{count: true, duplicates: true},
+			want:  "      2 a\n      3 c\n",
+		},
+		{
+			name:  "count + ignore case",
+			input: "Hello\nhello\nWorld\n",
+			opts:  uniqOptions{count: true, ignoreCase: true},
+			want:  "      2 Hello\n      1 World\n",
+		},
+		{
+			name:  "duplicates + ignore case",
+			input: "ABC\nabc\nDEF\n",
+			opts:  uniqOptions{duplicates: true, ignoreCase: true},
+			want:  "ABC\n",
+		},
+		{
+			name:  "all three options",
+			input: "Foo\nfoo\nFOO\nbar\nBAZ\nbaz\n",
+			opts:  uniqOptions{count: true, duplicates: true, ignoreCase: true},
+			want:  "      3 Foo\n      2 BAZ\n",
+		},
+		{
+			name:  "empty input with options",
+			input: "",
+			opts:  uniqOptions{count: true, duplicates: true, ignoreCase: true},
+			want:  "",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			w := bufio.NewWriter(&buf)
-			processReader(strings.NewReader(tt.input), w)
+			processReader(strings.NewReader(tt.input), w, tt.opts)
 			w.Flush()
 			got := buf.String()
 			if got != tt.want {
@@ -75,6 +164,7 @@ func TestRun(t *testing.T) {
 		args     []string
 		stdin    string
 		files    map[string]string
+		opts     uniqOptions
 		wantOut  string
 		wantErr  string
 		wantCode int
@@ -129,6 +219,31 @@ func TestRun(t *testing.T) {
 			wantOut:  "a\nb\na\nb\n",
 			wantCode: 0,
 		},
+		// Tier 2: run-level tests with options
+		{
+			name:     "count option via run",
+			args:     nil,
+			stdin:    "a\na\nb\n",
+			opts:     uniqOptions{count: true},
+			wantOut:  "      2 a\n      1 b\n",
+			wantCode: 0,
+		},
+		{
+			name:     "duplicates option via run",
+			args:     nil,
+			stdin:    "a\na\nb\nc\nc\n",
+			opts:     uniqOptions{duplicates: true},
+			wantOut:  "a\nc\n",
+			wantCode: 0,
+		},
+		{
+			name:     "ignore case option via run",
+			args:     nil,
+			stdin:    "AAA\naaa\nbbb\n",
+			opts:     uniqOptions{ignoreCase: true},
+			wantOut:  "AAA\nbbb\n",
+			wantCode: 0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -153,7 +268,7 @@ func TestRun(t *testing.T) {
 
 			var stdout, stderr bytes.Buffer
 			stdin := strings.NewReader(tt.stdin)
-			code := run(args, stdin, &stdout, &stderr)
+			code := run(args, stdin, &stdout, &stderr, tt.opts)
 
 			if code != tt.wantCode {
 				t.Errorf("exit code: got %d, want %d", code, tt.wantCode)
@@ -233,6 +348,70 @@ func TestIntegration(t *testing.T) {
 			name:     "non-adjacent not removed",
 			stdin:    "a\nb\na\n",
 			wantOut:  "a\nb\na\n",
+			wantCode: 0,
+		},
+		// Tier 2 integration tests
+		{
+			name:     "-c count flag",
+			args:     []string{"-c"},
+			stdin:    "aaa\naaa\nbbb\nccc\nccc\nccc\n",
+			wantOut:  "      2 aaa\n      1 bbb\n      3 ccc\n",
+			wantCode: 0,
+		},
+		{
+			name:     "-d duplicates only flag",
+			args:     []string{"-d"},
+			stdin:    "aaa\naaa\nbbb\nccc\nccc\n",
+			wantOut:  "aaa\nccc\n",
+			wantCode: 0,
+		},
+		{
+			name:     "-i case insensitive flag",
+			args:     []string{"-i"},
+			stdin:    "Hello\nhello\nHELLO\nWorld\n",
+			wantOut:  "Hello\nWorld\n",
+			wantCode: 0,
+		},
+		{
+			name:     "-c -d combined",
+			args:     []string{"-c", "-d"},
+			stdin:    "a\na\nb\nc\nc\nc\n",
+			wantOut:  "      2 a\n      3 c\n",
+			wantCode: 0,
+		},
+		{
+			name:     "-c -i combined",
+			args:     []string{"-c", "-i"},
+			stdin:    "Foo\nfoo\nBar\n",
+			wantOut:  "      2 Foo\n      1 Bar\n",
+			wantCode: 0,
+		},
+		{
+			name:     "-d -i combined",
+			args:     []string{"-d", "-i"},
+			stdin:    "ABC\nabc\nDEF\n",
+			wantOut:  "ABC\n",
+			wantCode: 0,
+		},
+		{
+			name:     "-c -d -i all combined",
+			args:     []string{"-c", "-d", "-i"},
+			stdin:    "Foo\nfoo\nFOO\nbar\nBAZ\nbaz\n",
+			wantOut:  "      3 Foo\n      2 BAZ\n",
+			wantCode: 0,
+		},
+		{
+			name:     "-c with file input",
+			file:     "x\nx\ny\ny\ny\nz\n",
+			args:     []string{"-c"},
+			wantOut:  "      2 x\n      3 y\n      1 z\n",
+			wantCode: 0,
+		},
+		{
+			name:     "-d with empty input",
+			args:     []string{"-d"},
+			stdin:    "",
+			wantOut:  "",
 			wantCode: 0,
 		},
 	}
