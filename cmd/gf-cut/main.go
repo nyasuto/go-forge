@@ -17,6 +17,7 @@ type cutMode int
 const (
 	modeFields cutMode = iota
 	modeChars
+	modeCsv
 )
 
 type cutOptions struct {
@@ -35,6 +36,7 @@ func main() {
 	optD := flag.String("d", "\t", "use DELIM instead of TAB for field delimiter")
 	optF := flag.String("f", "", "select only these fields (e.g. 1,3 or 1-3 or 2-)")
 	optC := flag.String("c", "", "select only these characters (e.g. 1-5 or 3,7 or 4-)")
+	optCsv := flag.Bool("csv", false, "CSV mode: ignore delimiters inside double-quoted fields")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-cut [OPTIONS] [FILE...]\n")
 		fmt.Fprintf(os.Stderr, "Remove sections from each line of files.\n\n")
@@ -57,6 +59,11 @@ func main() {
 		os.Exit(2)
 	}
 
+	if *optCsv && *optC != "" {
+		fmt.Fprintf(os.Stderr, "gf-cut: --csv cannot be used with -c\n")
+		os.Exit(2)
+	}
+
 	var spec string
 	mode := modeFields
 	if *optC != "" {
@@ -64,6 +71,9 @@ func main() {
 		mode = modeChars
 	} else {
 		spec = *optF
+		if *optCsv {
+			mode = modeCsv
+		}
 	}
 
 	ranges, err := parseFields(spec)
@@ -168,14 +178,63 @@ func processReader(r io.Reader, w *bufio.Writer, opts cutOptions, ranges []field
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if opts.mode == modeChars {
+		switch opts.mode {
+		case modeChars:
 			fmt.Fprintln(w, selectChars([]rune(line), ranges))
-		} else {
+		case modeCsv:
+			fields := splitCsvFields(line, opts.delimiter)
+			selected := selectFields(fields, ranges)
+			fmt.Fprintln(w, strings.Join(selected, opts.delimiter))
+		default:
 			fields := strings.Split(line, opts.delimiter)
 			selected := selectFields(fields, ranges)
 			fmt.Fprintln(w, strings.Join(selected, opts.delimiter))
 		}
 	}
+}
+
+// splitCsvFields splits a line by delimiter, respecting double-quoted fields.
+// Quotes are preserved in the output. Doubled quotes ("") inside quoted fields
+// are kept as-is.
+func splitCsvFields(line string, delim string) []string {
+	var fields []string
+	var current strings.Builder
+	inQuotes := false
+	delimLen := len(delim)
+	i := 0
+	for i < len(line) {
+		if inQuotes {
+			if line[i] == '"' {
+				current.WriteByte('"')
+				if i+1 < len(line) && line[i+1] == '"' {
+					// escaped quote
+					current.WriteByte('"')
+					i += 2
+				} else {
+					inQuotes = false
+					i++
+				}
+			} else {
+				current.WriteByte(line[i])
+				i++
+			}
+		} else {
+			if line[i] == '"' {
+				inQuotes = true
+				current.WriteByte('"')
+				i++
+			} else if delimLen > 0 && i+delimLen <= len(line) && line[i:i+delimLen] == delim {
+				fields = append(fields, current.String())
+				current.Reset()
+				i += delimLen
+			} else {
+				current.WriteByte(line[i])
+				i++
+			}
+		}
+	}
+	fields = append(fields, current.String())
+	return fields
 }
 
 func selectFields(fields []string, ranges []fieldRange) []string {

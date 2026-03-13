@@ -419,6 +419,173 @@ func TestRunCharMode(t *testing.T) {
 	}
 }
 
+func TestSplitCsvFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		line  string
+		delim string
+		want  []string
+	}{
+		{
+			name:  "simple no quotes",
+			line:  "a,b,c",
+			delim: ",",
+			want:  []string{"a", "b", "c"},
+		},
+		{
+			name:  "quoted field with delimiter inside",
+			line:  `"hello,world",b,c`,
+			delim: ",",
+			want:  []string{`"hello,world"`, "b", "c"},
+		},
+		{
+			name:  "escaped quote inside quoted field",
+			line:  `"say ""hi""",b`,
+			delim: ",",
+			want:  []string{`"say ""hi"""`, "b"},
+		},
+		{
+			name:  "empty quoted field",
+			line:  `"",b,c`,
+			delim: ",",
+			want:  []string{`""`, "b", "c"},
+		},
+		{
+			name:  "mixed quoted and unquoted",
+			line:  `a,"b,c",d`,
+			delim: ",",
+			want:  []string{"a", `"b,c"`, "d"},
+		},
+		{
+			name:  "multibyte content in quotes",
+			line:  `"東京,大阪",名古屋`,
+			delim: ",",
+			want:  []string{`"東京,大阪"`, "名古屋"},
+		},
+		{
+			name:  "newline-like content in quotes",
+			line:  `"field1","field with ""quotes""","field3"`,
+			delim: ",",
+			want:  []string{`"field1"`, `"field with ""quotes"""`, `"field3"`},
+		},
+		{
+			name:  "single field",
+			line:  `"only"`,
+			delim: ",",
+			want:  []string{`"only"`},
+		},
+		{
+			name:  "tab delimiter with csv quotes",
+			line:  "\"a\tb\"\tc",
+			delim: "\t",
+			want:  []string{"\"a\tb\"", "c"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitCsvFields(tt.line, tt.delim)
+			if len(got) != len(tt.want) {
+				t.Fatalf("splitCsvFields(%q) got %v (len %d), want %v (len %d)", tt.line, got, len(got), tt.want, len(tt.want))
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("splitCsvFields(%q)[%d] = %q, want %q", tt.line, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestRunCsvMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		opts     cutOptions
+		ranges   []fieldRange
+		wantOut  string
+		wantCode int
+	}{
+		{
+			name:    "csv basic field extraction",
+			input:   "a,b,c\nd,e,f\n",
+			opts:    cutOptions{delimiter: ",", mode: modeCsv},
+			ranges:  []fieldRange{{2, 2}},
+			wantOut: "b\ne\n",
+		},
+		{
+			name:    "csv quoted field with delimiter",
+			input:   "\"hello,world\",b,c\n",
+			opts:    cutOptions{delimiter: ",", mode: modeCsv},
+			ranges:  []fieldRange{{1, 1}},
+			wantOut: "\"hello,world\"\n",
+		},
+		{
+			name:    "csv select field after quoted",
+			input:   "\"a,b\",c,d\n",
+			opts:    cutOptions{delimiter: ",", mode: modeCsv},
+			ranges:  []fieldRange{{2, 2}},
+			wantOut: "c\n",
+		},
+		{
+			name:    "csv multiple quoted fields",
+			input:   "\"x,y\",\"a,b\",z\n",
+			opts:    cutOptions{delimiter: ",", mode: modeCsv},
+			ranges:  []fieldRange{{1, 1}, {3, 3}},
+			wantOut: "\"x,y\",z\n",
+		},
+		{
+			name:    "csv escaped quotes",
+			input:   "\"say \"\"hi\"\"\",b\n",
+			opts:    cutOptions{delimiter: ",", mode: modeCsv},
+			ranges:  []fieldRange{{1, 1}},
+			wantOut: "\"say \"\"hi\"\"\"\n",
+		},
+		{
+			name:    "csv empty input",
+			input:   "",
+			opts:    cutOptions{delimiter: ",", mode: modeCsv},
+			ranges:  []fieldRange{{1, 1}},
+			wantOut: "",
+		},
+		{
+			name:    "csv multibyte in quotes",
+			input:   "\"東京,大阪\",名古屋\n",
+			opts:    cutOptions{delimiter: ",", mode: modeCsv},
+			ranges:  []fieldRange{{1, 1}},
+			wantOut: "\"東京,大阪\"\n",
+		},
+		{
+			name:    "csv field range with quotes",
+			input:   "a,\"b,c\",d,e\n",
+			opts:    cutOptions{delimiter: ",", mode: modeCsv},
+			ranges:  []fieldRange{{2, 3}},
+			wantOut: "\"b,c\",d\n",
+		},
+		{
+			name:    "csv without quotes behaves like normal",
+			input:   "one,two,three\n",
+			opts:    cutOptions{delimiter: ",", mode: modeCsv},
+			ranges:  []fieldRange{{1, 1}, {3, 3}},
+			wantOut: "one,three\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			stdin := strings.NewReader(tt.input)
+			code := run(nil, stdin, &stdout, &stderr, tt.opts, tt.ranges)
+			if code != tt.wantCode {
+				t.Errorf("exit code = %d, want %d (stderr: %s)", code, tt.wantCode, stderr.String())
+			}
+			if stdout.String() != tt.wantOut {
+				t.Errorf("stdout = %q, want %q", stdout.String(), tt.wantOut)
+			}
+		})
+	}
+}
+
 func TestRunVersion(t *testing.T) {
 	// This is tested indirectly through the main function behavior,
 	// but we can at least verify the version constant

@@ -1,5 +1,34 @@
 # gf-cut テスト結果
 
+## Tier 3: --csv CSV対応モード
+
+- 実行日: 2026-03-14
+- 結果: ALL PASS (65件)
+
+### 追加テスト内訳
+
+#### TestSplitCsvFields (9件)
+- simple no quotes: PASS
+- quoted field with delimiter inside: PASS
+- escaped quote inside quoted field: PASS
+- empty quoted field: PASS
+- mixed quoted and unquoted: PASS
+- multibyte content in quotes: PASS
+- newline-like content in quotes: PASS
+- single field: PASS
+- tab delimiter with csv quotes: PASS
+
+#### TestRunCsvMode (9件)
+- csv basic field extraction: PASS
+- csv quoted field with delimiter: PASS
+- csv select field after quoted: PASS
+- csv multiple quoted fields: PASS
+- csv escaped quotes: PASS
+- csv empty input: PASS
+- csv multibyte in quotes: PASS
+- csv field range with quotes: PASS
+- csv without quotes behaves like normal: PASS
+
 ## Tier 2: -c 文字位置指定・フィールド範囲
 
 - 実行日: 2026-03-14
