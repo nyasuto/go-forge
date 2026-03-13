@@ -8,3 +8,7 @@
 ## Task 0: プロジェクト初期化
 - 完了日: 2026-03-14
 - 作業内容: go.work初期化、Makefile作成（build/test/qualityターゲット）、docs/test-results/ディレクトリ作成。全ターゲットの動作確認済み。
+
+## gf-cat Tier 1: コア機能
+- 完了日: 2026-03-14
+- 作業内容: cmd/gf-cat/ 作成（go.mod初期化、go.workに追加）。ファイル連結表示、stdin対応（引数なし・ハイフン）、複数ファイル引数対応、--version表示、エラーハンドリング（存在しないファイル→exit 1）。単体テスト7件+統合テスト8件、全PASS。
