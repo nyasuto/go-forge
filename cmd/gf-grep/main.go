@@ -6,13 +6,29 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
+	"path/filepath"
+	"regexp"
 )
 
 const version = "0.1.0"
 
+type grepOptions struct {
+	ignoreCase bool
+	invert     bool
+	count      bool
+	lineNumber bool
+	recursive  bool
+}
+
 func main() {
 	showVersion := flag.Bool("version", false, "バージョンを表示")
+	opts := grepOptions{}
+	flag.BoolVar(&opts.ignoreCase, "i", false, "大文字小文字を無視")
+	flag.BoolVar(&opts.invert, "v", false, "マッチしない行を表示")
+	flag.BoolVar(&opts.count, "c", false, "マッチした行数を表示")
+	flag.BoolVar(&opts.lineNumber, "n", false, "行番号を表示")
+	flag.BoolVar(&opts.recursive, "r", false, "ディレクトリを再帰的に検索")
+
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-grep [OPTIONS] PATTERN [FILE]...\n\nパターンにマッチする行を表示する。\n\nOptions:\n")
 		flag.PrintDefaults()
@@ -33,20 +49,35 @@ func main() {
 	pattern := args[0]
 	files := args[1:]
 
+	re, err := compilePattern(pattern, opts.ignoreCase)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gf-grep: 不正な正規表現: %v\n", err)
+		os.Exit(2)
+	}
+
 	exitCode := 1 // 1 = no match found
 
 	if len(files) == 0 {
-		if grep(os.Stdin, os.Stdout, pattern, "") {
+		if grep(os.Stdin, os.Stdout, re, "", opts) {
 			exitCode = 0
 		}
 		os.Exit(exitCode)
+	}
+
+	// Expand files with -r
+	if opts.recursive {
+		expanded, errs := expandRecursive(files)
+		for _, e := range errs {
+			fmt.Fprintf(os.Stderr, "gf-grep: %v\n", e)
+		}
+		files = expanded
 	}
 
 	showFilename := len(files) > 1
 
 	for _, name := range files {
 		if name == "-" {
-			if grep(os.Stdin, os.Stdout, pattern, stdinPrefix(showFilename)) {
+			if grep(os.Stdin, os.Stdout, re, stdinPrefix(showFilename), opts) {
 				exitCode = 0
 			}
 			continue
@@ -65,13 +96,20 @@ func main() {
 		if showFilename {
 			prefix = name + ":"
 		}
-		if grep(f, os.Stdout, pattern, prefix) {
+		if grep(f, os.Stdout, re, prefix, opts) {
 			exitCode = 0
 		}
 		f.Close()
 	}
 
 	os.Exit(exitCode)
+}
+
+func compilePattern(pattern string, ignoreCase bool) (*regexp.Regexp, error) {
+	if ignoreCase {
+		pattern = "(?i)" + pattern
+	}
+	return regexp.Compile(pattern)
 }
 
 func stdinPrefix(show bool) string {
@@ -81,25 +119,82 @@ func stdinPrefix(show bool) string {
 	return ""
 }
 
+// expandRecursive walks directories and returns all regular files.
+func expandRecursive(paths []string) ([]string, []error) {
+	var files []string
+	var errs []error
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if !info.IsDir() {
+			files = append(files, p)
+			continue
+		}
+		filepath.Walk(p, func(path string, fi os.FileInfo, err error) error {
+			if err != nil {
+				errs = append(errs, err)
+				return nil
+			}
+			if !fi.IsDir() && fi.Mode().IsRegular() {
+				files = append(files, path)
+			}
+			return nil
+		})
+	}
+	return files, errs
+}
+
 // grep searches for pattern in r and writes matching lines to w.
 // Returns true if at least one match was found.
-func grep(r io.Reader, w io.Writer, pattern, prefix string) bool {
+func grep(r io.Reader, w io.Writer, re *regexp.Regexp, prefix string, opts grepOptions) bool {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	bw := bufio.NewWriter(w)
 	defer bw.Flush()
 
 	found := false
+	lineNum := 0
+	matchCount := 0
+
 	for scanner.Scan() {
+		lineNum++
 		line := scanner.Text()
-		if strings.Contains(line, pattern) {
+		matched := re.MatchString(line)
+
+		if opts.invert {
+			matched = !matched
+		}
+
+		if matched {
 			found = true
-			if prefix != "" {
-				fmt.Fprintf(bw, "%s%s\n", prefix, line)
-			} else {
-				fmt.Fprintf(bw, "%s\n", line)
+			matchCount++
+			if !opts.count {
+				printLine(bw, prefix, line, lineNum, opts.lineNumber)
 			}
 		}
 	}
+
+	if opts.count {
+		if prefix != "" {
+			fmt.Fprintf(bw, "%s%d\n", prefix, matchCount)
+		} else {
+			fmt.Fprintf(bw, "%d\n", matchCount)
+		}
+	}
+
 	return found
 }
+
+func printLine(w *bufio.Writer, prefix, line string, lineNum int, showLineNum bool) {
+	if prefix != "" {
+		fmt.Fprint(w, prefix)
+	}
+	if showLineNum {
+		fmt.Fprintf(w, "%d:", lineNum)
+	}
+	fmt.Fprintf(w, "%s\n", line)
+}
+

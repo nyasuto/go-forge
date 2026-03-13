@@ -5,9 +5,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+func compileTestPattern(t *testing.T, pattern string, ignoreCase bool) *regexp.Regexp {
+	t.Helper()
+	re, err := compilePattern(pattern, ignoreCase)
+	if err != nil {
+		t.Fatalf("compilePattern failed: %v", err)
+	}
+	return re
+}
 
 func TestGrep(t *testing.T) {
 	tests := []struct {
@@ -91,7 +101,8 @@ func TestGrep(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := strings.NewReader(tt.input)
 			var buf bytes.Buffer
-			got := grep(r, &buf, tt.pattern, tt.prefix)
+			re := compileTestPattern(t, regexp.QuoteMeta(tt.pattern), false)
+			got := grep(r, &buf, re, tt.prefix, grepOptions{})
 
 			if got != tt.found {
 				t.Errorf("grep() found = %v, want %v", got, tt.found)
@@ -100,6 +111,150 @@ func TestGrep(t *testing.T) {
 				t.Errorf("grep() output = %q, want %q", buf.String(), tt.want)
 			}
 		})
+	}
+}
+
+func TestGrepRegex(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		input   string
+		opts    grepOptions
+		want    string
+		found   bool
+	}{
+		{
+			name:    "正規表現マッチ",
+			pattern: "^func ",
+			input:   "func main() {\n\tx := func() {}\n}\n",
+			want:    "func main() {\n",
+			found:   true,
+		},
+		{
+			name:    "正規表現ドットワイルドカード",
+			pattern: "h.llo",
+			input:   "hello\nhallo\nhxllo\nworld\n",
+			want:    "hello\nhallo\nhxllo\n",
+			found:   true,
+		},
+		{
+			name:    "正規表現文字クラス",
+			pattern: "[0-9]+",
+			input:   "abc\n123\ndef456\n",
+			want:    "123\ndef456\n",
+			found:   true,
+		},
+		// -i: 大文字小文字無視
+		{
+			name:    "-i 大文字小文字無視",
+			pattern: "hello",
+			input:   "Hello\nhELLO\nworld\n",
+			opts:    grepOptions{ignoreCase: true},
+			want:    "Hello\nhELLO\n",
+			found:   true,
+		},
+		// -v: 反転マッチ
+		{
+			name:    "-v 反転マッチ",
+			pattern: "skip",
+			input:   "keep\nskip this\nkeep too\n",
+			opts:    grepOptions{invert: true},
+			want:    "keep\nkeep too\n",
+			found:   true,
+		},
+		{
+			name:    "-v 全行マッチで反転→出力なし",
+			pattern: ".",
+			input:   "a\nb\nc\n",
+			opts:    grepOptions{invert: true},
+			want:    "",
+			found:   false,
+		},
+		// -c: カウント
+		{
+			name:    "-c マッチ行数カウント",
+			pattern: "foo",
+			input:   "foo\nbar\nfoo baz\n",
+			opts:    grepOptions{count: true},
+			want:    "2\n",
+			found:   true,
+		},
+		{
+			name:    "-c マッチなしでカウント0",
+			pattern: "xyz",
+			input:   "aaa\nbbb\n",
+			opts:    grepOptions{count: true},
+			want:    "0\n",
+			found:   false,
+		},
+		// -n: 行番号
+		{
+			name:    "-n 行番号表示",
+			pattern: "match",
+			input:   "no\nmatch1\nno\nmatch2\n",
+			opts:    grepOptions{lineNumber: true},
+			want:    "2:match1\n4:match2\n",
+			found:   true,
+		},
+		// -i + -v 組み合わせ
+		{
+			name:    "-i -v 大文字小文字無視+反転",
+			pattern: "error",
+			input:   "ERROR found\nwarning\nError again\ninfo\n",
+			opts:    grepOptions{ignoreCase: true, invert: true},
+			want:    "warning\ninfo\n",
+			found:   true,
+		},
+		// -c + -n は -c が優先
+		{
+			name:    "-c -n はカウントのみ",
+			pattern: "x",
+			input:   "ax\nbx\ncx\n",
+			opts:    grepOptions{count: true, lineNumber: true},
+			want:    "3\n",
+			found:   true,
+		},
+		// エッジケース: マルチバイト正規表現
+		{
+			name:    "マルチバイト正規表現",
+			pattern: "テスト[0-9]+",
+			input:   "テスト1\nテスト\nテスト99\n",
+			want:    "テスト1\nテスト99\n",
+			found:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := strings.NewReader(tt.input)
+			var buf bytes.Buffer
+			re := compileTestPattern(t, tt.pattern, tt.opts.ignoreCase)
+			got := grep(r, &buf, re, "", tt.opts)
+
+			if got != tt.found {
+				t.Errorf("grep() found = %v, want %v", got, tt.found)
+			}
+			if buf.String() != tt.want {
+				t.Errorf("grep() output = %q, want %q", buf.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestExpandRecursive(t *testing.T) {
+	dir := t.TempDir()
+	// Create directory structure
+	os.MkdirAll(filepath.Join(dir, "sub", "deep"), 0755)
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "sub", "b.txt"), []byte("world\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "sub", "deep", "c.txt"), []byte("deep\n"), 0644)
+
+	files, errs := expandRecursive([]string{dir})
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(files) != 3 {
+		t.Errorf("expected 3 files, got %d: %v", len(files), files)
 	}
 }
 
@@ -225,6 +380,137 @@ func TestIntegration(t *testing.T) {
 		}
 		if string(out) != "match this\n" {
 			t.Errorf("got %q, want %q", string(out), "match this\n")
+		}
+	})
+
+	// Tier 2 統合テスト
+	t.Run("正規表現マッチ", func(t *testing.T) {
+		cmd := exec.Command(bin, "^hello")
+		cmd.Stdin = strings.NewReader("hello world\nsay hello\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(out) != "hello world\n" {
+			t.Errorf("got %q, want %q", string(out), "hello world\n")
+		}
+	})
+
+	t.Run("-i 大文字小文字無視", func(t *testing.T) {
+		cmd := exec.Command(bin, "-i", "hello")
+		cmd.Stdin = strings.NewReader("Hello\nhELLO\nworld\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(out) != "Hello\nhELLO\n" {
+			t.Errorf("got %q, want %q", string(out), "Hello\nhELLO\n")
+		}
+	})
+
+	t.Run("-v 反転マッチ", func(t *testing.T) {
+		cmd := exec.Command(bin, "-v", "skip")
+		cmd.Stdin = strings.NewReader("keep\nskip\nkeep too\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(out) != "keep\nkeep too\n" {
+			t.Errorf("got %q, want %q", string(out), "keep\nkeep too\n")
+		}
+	})
+
+	t.Run("-c カウント", func(t *testing.T) {
+		cmd := exec.Command(bin, "-c", "foo")
+		cmd.Stdin = strings.NewReader("foo\nbar\nfoo baz\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(out) != "2\n" {
+			t.Errorf("got %q, want %q", string(out), "2\n")
+		}
+	})
+
+	t.Run("-n 行番号表示", func(t *testing.T) {
+		cmd := exec.Command(bin, "-n", "match")
+		cmd.Stdin = strings.NewReader("no\nmatch1\nno\nmatch2\n")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(out) != "2:match1\n4:match2\n" {
+			t.Errorf("got %q, want %q", string(out), "2:match1\n4:match2\n")
+		}
+	})
+
+	t.Run("-r 再帰検索", func(t *testing.T) {
+		dir := t.TempDir()
+		os.MkdirAll(filepath.Join(dir, "sub"), 0755)
+		os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello\nworld\n"), 0644)
+		os.WriteFile(filepath.Join(dir, "sub", "b.txt"), []byte("hello again\nbye\n"), 0644)
+
+		cmd := exec.Command(bin, "-r", "hello", dir)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		output := string(out)
+		if !strings.Contains(output, "hello") {
+			t.Errorf("expected hello matches, got %q", output)
+		}
+		// Should have file prefixes since multiple files
+		if !strings.Contains(output, ":hello") {
+			t.Errorf("expected file prefix, got %q", output)
+		}
+	})
+
+	t.Run("不正な正規表現→exit 2", func(t *testing.T) {
+		cmd := exec.Command(bin, "[invalid")
+		cmd.Stdin = strings.NewReader("test\n")
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			t.Fatal("expected exit code 2")
+		}
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok || exitErr.ExitCode() != 2 {
+			t.Errorf("expected exit code 2, got %v", err)
+		}
+		if !strings.Contains(string(out), "不正な正規表現") {
+			t.Errorf("expected regex error, got %q", string(out))
+		}
+	})
+
+	t.Run("-c 複数ファイルでファイル名付きカウント", func(t *testing.T) {
+		dir := t.TempDir()
+		f1 := filepath.Join(dir, "a.txt")
+		f2 := filepath.Join(dir, "b.txt")
+		os.WriteFile(f1, []byte("foo\nfoo\nbar\n"), 0644)
+		os.WriteFile(f2, []byte("baz\nfoo\n"), 0644)
+
+		cmd := exec.Command(bin, "-c", "foo", f1, f2)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := f1 + ":2\n" + f2 + ":1\n"
+		if string(out) != want {
+			t.Errorf("got %q, want %q", string(out), want)
+		}
+	})
+
+	t.Run("-n 複数ファイルで行番号+ファイル名", func(t *testing.T) {
+		dir := t.TempDir()
+		f1 := filepath.Join(dir, "a.txt")
+		os.WriteFile(f1, []byte("aaa\nbbb\naaa\n"), 0644)
+
+		cmd := exec.Command(bin, "-n", "aaa", f1)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(out) != "1:aaa\n3:aaa\n" {
+			t.Errorf("got %q, want %q", string(out), "1:aaa\n3:aaa\n")
 		}
 	})
 }
