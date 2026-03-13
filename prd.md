@@ -296,7 +296,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 - [x] Tier 1: `cmd/gf-sed/` 作成（go.mod初期化、go.workに追加）。`s/pattern/replace/` 基本置換（1行に最初の1つ）、stdin対応。テスト作成・通過。テスト結果を `docs/test-results/gf-sed.md` に記録。
 - [x] Tier 2: `g` フラグ（全置換）、アドレス指定（行番号、`/pattern/`）、`-i` in-place編集。テスト追加・通過。テスト結果を更新。
-- [ ] Tier 3: マルチバイト安全な置換（rune単位処理）。テスト追加・通過。テスト結果を更新。
+- [x] Tier 3: マルチバイト安全な置換（rune単位処理）。テスト追加・通過。テスト結果を更新。
 
 #### gf-xargs（引数構築・実行）
 

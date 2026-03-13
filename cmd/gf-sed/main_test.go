@@ -190,7 +190,7 @@ func TestSplitByDelim(t *testing.T) {
 	tests := []struct {
 		name  string
 		s     string
-		delim byte
+		delim rune
 		want  []string
 	}{
 		{
@@ -717,6 +717,240 @@ func TestInPlace(t *testing.T) {
 		}
 		got := readFile(path)
 		want := "line1\nLINE2\nline3\n"
+		if got != want {
+			t.Errorf("file content = %q, want %q", got, want)
+		}
+	})
+}
+
+// ===== Tier 3 Tests: Multibyte-safe (rune-aware) processing =====
+
+func TestMultibyteDelimiter(t *testing.T) {
+	tests := []struct {
+		name     string
+		expr     string
+		input    string
+		wantOut  string
+	}{
+		{
+			name:    "star delimiter with CJK",
+			expr:    "s★世界★地球★",
+			input:   "こんにちは世界\n",
+			wantOut: "こんにちは地球\n",
+		},
+		{
+			name:    "star delimiter with global flag",
+			expr:    "s★あ★い★g",
+			input:   "ああああ\n",
+			wantOut: "いいいい\n",
+		},
+		{
+			name:    "hash delimiter with multibyte pattern",
+			expr:    "s#東京#大阪#",
+			input:   "東京タワー\n",
+			wantOut: "大阪タワー\n",
+		},
+		{
+			name:    "multibyte delimiter escaped",
+			expr:    "s★foo\\★bar★baz★",
+			input:   "foo★bar test\n",
+			wantOut: "baz test\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, err := parseExpression(tt.expr)
+			if err != nil {
+				t.Fatalf("failed to parse expression: %v", err)
+			}
+			stdin := strings.NewReader(tt.input)
+			var stdout, stderr bytes.Buffer
+			code := run(nil, stdin, &stdout, &stderr, cmd)
+			if code != 0 {
+				t.Errorf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+			}
+			if stdout.String() != tt.wantOut {
+				t.Errorf("stdout = %q, want %q", stdout.String(), tt.wantOut)
+			}
+		})
+	}
+}
+
+func TestMultibyteSafeProcessing(t *testing.T) {
+	tests := []struct {
+		name     string
+		expr     string
+		input    string
+		wantOut  string
+	}{
+		{
+			name:    "CJK characters in pattern and replacement",
+			expr:    "s/日本語/英語/",
+			input:   "日本語のテスト\n",
+			wantOut: "英語のテスト\n",
+		},
+		{
+			name:    "emoji replacement",
+			expr:    "s/😀/😎/g",
+			input:   "hello 😀 world 😀\n",
+			wantOut: "hello 😎 world 😎\n",
+		},
+		{
+			name:    "mixed ASCII and multibyte global replace",
+			expr:    "s/test/テスト/g",
+			input:   "test1 test2 test3\n",
+			wantOut: "テスト1 テスト2 テスト3\n",
+		},
+		{
+			name:    "regex with multibyte character class",
+			expr:    "s/[あ-お]+/MATCHED/",
+			input:   "あいうえお test\n",
+			wantOut: "MATCHED test\n",
+		},
+		{
+			name:    "multibyte in address pattern",
+			expr:    "/エラー/s/旧/新/",
+			input:   "エラー: 旧データ\n情報: 旧データ\n",
+			wantOut: "エラー: 新データ\n情報: 旧データ\n",
+		},
+		{
+			name:    "4-byte emoji in pattern",
+			expr:    "s/🎉+/PARTY/g",
+			input:   "🎉🎉🎉 celebration 🎉\n",
+			wantOut: "PARTY celebration PARTY\n",
+		},
+		{
+			name:    "combining characters preserved",
+			expr:    "s/café/coffee/",
+			input:   "I like café\n",
+			wantOut: "I like coffee\n",
+		},
+		{
+			name:    "zero-width characters pass through",
+			expr:    "s/hello/world/",
+			input:   "hello\u200Btest\n",
+			wantOut: "world\u200Btest\n",
+		},
+		{
+			name:    "fullwidth digits replacement",
+			expr:    "s/１２３/456/",
+			input:   "番号：１２３\n",
+			wantOut: "番号：456\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, err := parseExpression(tt.expr)
+			if err != nil {
+				t.Fatalf("failed to parse expression: %v", err)
+			}
+			stdin := strings.NewReader(tt.input)
+			var stdout, stderr bytes.Buffer
+			code := run(nil, stdin, &stdout, &stderr, cmd)
+			if code != 0 {
+				t.Errorf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+			}
+			if stdout.String() != tt.wantOut {
+				t.Errorf("stdout = %q, want %q", stdout.String(), tt.wantOut)
+			}
+		})
+	}
+}
+
+func TestSplitByDelimMultibyte(t *testing.T) {
+	tests := []struct {
+		name  string
+		s     string
+		delim rune
+		want  []string
+	}{
+		{
+			name:  "star delimiter",
+			s:     "foo★bar★",
+			delim: '★',
+			want:  []string{"foo", "bar", ""},
+		},
+		{
+			name:  "CJK delimiter",
+			s:     "hello世world世",
+			delim: '世',
+			want:  []string{"hello", "world", ""},
+		},
+		{
+			name:  "escaped multibyte delimiter",
+			s:     "foo\\★bar★baz★",
+			delim: '★',
+			want:  []string{"foo★bar", "baz", ""},
+		},
+		{
+			name:  "emoji delimiter",
+			s:     "a🔥b🔥",
+			delim: '🔥',
+			want:  []string{"a", "b", ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitByDelim(tt.s, tt.delim)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v (len %d), want %v (len %d)", got, len(got), tt.want, len(tt.want))
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("part[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestMultibyteInPlace(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	writeFile := func(name, content string) string {
+		path := filepath.Join(tmpDir, name)
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	readFile := func(path string) string {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+
+	t.Run("in-place multibyte replacement", func(t *testing.T) {
+		path := writeFile("mb_inplace.txt", "こんにちは世界\nさようなら世界\n")
+		cmd, _ := parseExpression("s/世界/地球/g")
+		var stderr bytes.Buffer
+		code := runInPlace([]string{path}, &stderr, cmd)
+		if code != 0 {
+			t.Errorf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+		}
+		got := readFile(path)
+		want := "こんにちは地球\nさようなら地球\n"
+		if got != want {
+			t.Errorf("file content = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("in-place emoji replacement", func(t *testing.T) {
+		path := writeFile("emoji_inplace.txt", "status: 😀\nresult: 😀\n")
+		cmd, _ := parseExpression("s/😀/✅/g")
+		var stderr bytes.Buffer
+		code := runInPlace([]string{path}, &stderr, cmd)
+		if code != 0 {
+			t.Errorf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+		}
+		got := readFile(path)
+		want := "status: ✅\nresult: ✅\n"
 		if got != want {
 			t.Errorf("file content = %q, want %q", got, want)
 		}

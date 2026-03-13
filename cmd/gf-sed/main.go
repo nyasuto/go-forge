@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 const version = "0.1.0"
@@ -95,14 +96,18 @@ func parseExpression(expr string) (*sedCommand, error) {
 	if !strings.HasPrefix(rest, "s") {
 		return nil, fmt.Errorf("unknown command: '%s'", expr)
 	}
-	if len(rest) < 2 {
+	afterS := rest[1:]
+	if len(afterS) == 0 {
 		return nil, fmt.Errorf("invalid expression: '%s'", expr)
 	}
 
-	delim := rest[1]
-	body := rest[2:]
+	delim, delimSize := utf8.DecodeRuneInString(afterS)
+	if delim == utf8.RuneError {
+		return nil, fmt.Errorf("invalid delimiter in expression: '%s'", expr)
+	}
+	body := afterS[delimSize:]
 
-	// Split by delimiter, handling escaped delimiters
+	// Split by delimiter, handling escaped delimiters (rune-aware)
 	parts := splitByDelim(body, delim)
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("invalid substitution expression: '%s'", expr)
@@ -145,8 +150,10 @@ func parseAddress(expr string) (*address, string, error) {
 		return nil, expr, nil
 	}
 
+	firstRune, _ := utf8.DecodeRuneInString(expr)
+
 	// /pattern/ address
-	if expr[0] == '/' {
+	if firstRune == '/' {
 		end := findClosingSlash(expr, 1)
 		if end < 0 {
 			return nil, "", fmt.Errorf("unterminated address regex: '%s'", expr)
@@ -160,11 +167,11 @@ func parseAddress(expr string) (*address, string, error) {
 	}
 
 	// $ address
-	if expr[0] == '$' {
+	if firstRune == '$' {
 		return &address{typ: addrLast}, expr[1:], nil
 	}
 
-	// Line number address
+	// Line number address (digits are always single-byte ASCII)
 	i := 0
 	for i < len(expr) && expr[i] >= '0' && expr[i] <= '9' {
 		i++
@@ -180,46 +187,56 @@ func parseAddress(expr string) (*address, string, error) {
 	return nil, expr, nil
 }
 
-// findClosingSlash finds the index of the closing '/' in an address pattern,
-// handling backslash-escaped slashes. Returns -1 if not found.
+// findClosingSlash finds the byte index of the closing '/' in an address pattern,
+// handling backslash-escaped slashes. Processes rune-by-rune for multibyte safety.
+// Returns -1 if not found.
 func findClosingSlash(s string, start int) int {
-	for i := start; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) {
-			i++ // skip escaped char
+	i := start
+	for i < len(s) {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == '\\' {
+			i += size
+			if i < len(s) {
+				_, size2 := utf8.DecodeRuneInString(s[i:])
+				i += size2
+			}
 			continue
 		}
-		if s[i] == '/' {
+		if r == '/' {
 			return i
 		}
+		i += size
 	}
 	return -1
 }
 
-// splitByDelim splits a string by a delimiter byte, respecting backslash escapes.
+// splitByDelim splits a string by a delimiter rune, respecting backslash escapes.
 // Returns the parts (without the delimiter). The trailing delimiter is optional.
-func splitByDelim(s string, delim byte) []string {
+// Processes input rune-by-rune for multibyte safety.
+func splitByDelim(s string, delim rune) []string {
 	var parts []string
 	var current strings.Builder
+	runes := []rune(s)
 	i := 0
-	for i < len(s) {
-		if s[i] == '\\' && i+1 < len(s) {
-			if s[i+1] == delim {
-				current.WriteByte(delim)
+	for i < len(runes) {
+		if runes[i] == '\\' && i+1 < len(runes) {
+			if runes[i+1] == delim {
+				current.WriteRune(delim)
 				i += 2
 				continue
 			}
-			current.WriteByte(s[i])
-			current.WriteByte(s[i+1])
+			current.WriteRune(runes[i])
+			current.WriteRune(runes[i+1])
 			i += 2
 			continue
 		}
-		if s[i] == delim {
+		if runes[i] == delim {
 			parts = append(parts, current.String())
 			current.Reset()
 			i++
 			continue
 		}
-		current.WriteByte(s[i])
+		current.WriteRune(runes[i])
 		i++
 	}
 	parts = append(parts, current.String())

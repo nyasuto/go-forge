@@ -136,3 +136,7 @@
 ## gf-sed Tier 2: g フラグ・アドレス指定・-i in-place編集
 - 完了日: 2026-03-14
 - 作業内容: `g`フラグ（全置換、`ReplaceAllString`使用）、アドレス指定（行番号`Ns/...`、最終行`$s/...`、パターン`/pat/s/...`）、`-i` in-place編集（ファイル読み込み→変換→同一パスに書き戻し、パーミッション保持）を追加。`parseAddress`関数でアドレスプレフィックスをパース、`matchAddress`で行ごとの適用判定。`$`アドレスは全行読み込み後に最終行のみ変換する`processReaderLastLine`で処理。`runInPlace`関数でin-place編集を実装。単体テスト33件追加、累計62件ALL PASS。
+
+## gf-sed Tier 3: マルチバイト安全な置換（rune単位処理）
+- 完了日: 2026-03-14
+- 作業内容: 式パーサーをrune単位処理に全面改修。`splitByDelim`を`byte`から`rune`ベースに変更し、マルチバイトデリミタ（★、🔥等）に対応。`parseExpression`で`utf8.DecodeRuneInString`によるデリミタ抽出。`findClosingSlash`もrune単位走査に変更。`parseAddress`の先頭文字判定もrune安全に。CJK文字・絵文字（4バイト）・全角数字・結合文字・ゼロ幅文字のパターンマッチ＋置換テスト、マルチバイトデリミタテスト、in-placeマルチバイトテストを追加。単体テスト19件追加、累計81件ALL PASS。

@@ -126,3 +126,47 @@
 | 3 | global with multibyte | エッジ | PASS |
 
 ### Tier 2 追加: 33件、累計: 62件 ALL PASS
+
+## Tier 3: マルチバイト安全な置換（rune単位処理）
+
+- 実行日: 2026-03-14
+- 結果: ALL PASS
+
+### テストケース一覧
+
+#### TestMultibyteDelimiter (4件)
+| # | テスト名 | 種別 | 結果 |
+|---|---------|------|------|
+| 1 | star delimiter with CJK | 正常系 | PASS |
+| 2 | star delimiter with global flag | 正常系 | PASS |
+| 3 | hash delimiter with multibyte pattern | 正常系 | PASS |
+| 4 | multibyte delimiter escaped | エッジ | PASS |
+
+#### TestMultibyteSafeProcessing (9件)
+| # | テスト名 | 種別 | 結果 |
+|---|---------|------|------|
+| 1 | CJK characters in pattern and replacement | 正常系 | PASS |
+| 2 | emoji replacement | 正常系 | PASS |
+| 3 | mixed ASCII and multibyte global replace | 正常系 | PASS |
+| 4 | regex with multibyte character class | 正常系 | PASS |
+| 5 | multibyte in address pattern | 正常系 | PASS |
+| 6 | 4-byte emoji in pattern | エッジ | PASS |
+| 7 | combining characters preserved | エッジ | PASS |
+| 8 | zero-width characters pass through | エッジ | PASS |
+| 9 | fullwidth digits replacement | エッジ | PASS |
+
+#### TestSplitByDelimMultibyte (4件)
+| # | テスト名 | 種別 | 結果 |
+|---|---------|------|------|
+| 1 | star delimiter | 正常系 | PASS |
+| 2 | CJK delimiter | 正常系 | PASS |
+| 3 | escaped multibyte delimiter | エッジ | PASS |
+| 4 | emoji delimiter | エッジ | PASS |
+
+#### TestMultibyteInPlace (2件)
+| # | テスト名 | 種別 | 結果 |
+|---|---------|------|------|
+| 1 | in-place multibyte replacement | 正常系 | PASS |
+| 2 | in-place emoji replacement | 正常系 | PASS |
+
+### Tier 3 追加: 19件、累計: 81件 ALL PASS
