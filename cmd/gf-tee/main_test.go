@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRun(t *testing.T) {
@@ -264,6 +265,150 @@ func TestMultipleFiles(t *testing.T) {
 		}
 		if string(data) != input {
 			t.Errorf("file %s = %q, want %q", path, string(data), input)
+		}
+	}
+}
+
+func TestTimestamp(t *testing.T) {
+	// Use fixed time for deterministic output
+	fixedTime := time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
+	origNow := nowFunc
+	nowFunc = func() time.Time { return fixedTime }
+	defer func() { nowFunc = origNow }()
+
+	ts := "2026-03-14T12:00:00.000Z"
+
+	tests := []struct {
+		name       string
+		args       []string
+		input      string
+		wantStdout string
+		wantExit   int
+		checkFiles map[string]string
+	}{
+		// 正常系
+		{
+			name:       "timestamp single line",
+			args:       []string{"--ts"},
+			input:      "hello\n",
+			wantStdout: "[" + ts + "] hello\n",
+			wantExit:   0,
+		},
+		{
+			name:       "timestamp multiple lines",
+			args:       []string{"--ts"},
+			input:      "line1\nline2\nline3\n",
+			wantStdout: "[" + ts + "] line1\n[" + ts + "] line2\n[" + ts + "] line3\n",
+			wantExit:   0,
+		},
+		{
+			name:       "timestamp with file output",
+			args:       []string{"--ts", "out.txt"},
+			input:      "data\n",
+			wantStdout: "[" + ts + "] data\n",
+			wantExit:   0,
+			checkFiles: map[string]string{"out.txt": "[" + ts + "] data\n"},
+		},
+		// エッジケース
+		{
+			name:       "timestamp empty input",
+			args:       []string{"--ts"},
+			input:      "",
+			wantStdout: "",
+			wantExit:   0,
+		},
+		{
+			name:       "timestamp multibyte input",
+			args:       []string{"--ts"},
+			input:      "こんにちは\n",
+			wantStdout: "[" + ts + "] こんにちは\n",
+			wantExit:   0,
+		},
+		{
+			name:       "timestamp with multiple files",
+			args:       []string{"--ts", "a.txt", "b.txt"},
+			input:      "test\n",
+			wantStdout: "[" + ts + "] test\n",
+			wantExit:   0,
+			checkFiles: map[string]string{
+				"a.txt": "[" + ts + "] test\n",
+				"b.txt": "[" + ts + "] test\n",
+			},
+		},
+		{
+			name:       "timestamp with append mode",
+			args:       []string{"--ts", "-a", "out.txt"},
+			input:      "appended\n",
+			wantStdout: "[" + ts + "] appended\n",
+			wantExit:   0,
+			checkFiles: map[string]string{"out.txt": "[" + ts + "] appended\n"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+
+			resolvedArgs := make([]string, len(tt.args))
+			for i, a := range tt.args {
+				if strings.HasPrefix(a, "-") {
+					resolvedArgs[i] = a
+				} else {
+					resolvedArgs[i] = filepath.Join(tmpDir, a)
+				}
+			}
+
+			stdin := strings.NewReader(tt.input)
+			var stdout, stderr bytes.Buffer
+
+			exitCode := run(resolvedArgs, stdin, &stdout, &stderr)
+
+			if exitCode != tt.wantExit {
+				t.Errorf("exit code = %d, want %d (stderr: %s)", exitCode, tt.wantExit, stderr.String())
+			}
+
+			if stdout.String() != tt.wantStdout {
+				t.Errorf("stdout = %q, want %q", stdout.String(), tt.wantStdout)
+			}
+
+			for name, want := range tt.checkFiles {
+				path := filepath.Join(tmpDir, name)
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Errorf("failed to read %s: %v", name, err)
+					continue
+				}
+				if string(data) != want {
+					t.Errorf("file %s = %q, want %q", name, string(data), want)
+				}
+			}
+		})
+	}
+}
+
+func TestMultipleFilesWithAppend(t *testing.T) {
+	tmpDir := t.TempDir()
+	f1 := filepath.Join(tmpDir, "a.txt")
+	f2 := filepath.Join(tmpDir, "b.txt")
+
+	// Write initial content
+	os.WriteFile(f1, []byte("old1\n"), 0644)
+	os.WriteFile(f2, []byte("old2\n"), 0644)
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"-a", f1, f2}, strings.NewReader("new\n"), &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("exit code = %d, want 0", exitCode)
+	}
+
+	for _, tc := range []struct{ path, want string }{
+		{f1, "old1\nnew\n"},
+		{f2, "old2\nnew\n"},
+	} {
+		data, _ := os.ReadFile(tc.path)
+		if string(data) != tc.want {
+			t.Errorf("file %s = %q, want %q", tc.path, string(data), tc.want)
 		}
 	}
 }
