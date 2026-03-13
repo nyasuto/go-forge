@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -18,12 +19,18 @@ type counts struct {
 	chars int
 }
 
+type fileResult struct {
+	name   string
+	counts counts
+}
+
 func main() {
 	showVersion := flag.Bool("version", false, "バージョンを表示")
 	countLines := flag.Bool("l", false, "行数のみ表示")
 	countWords := flag.Bool("w", false, "単語数のみ表示")
 	countBytes := flag.Bool("c", false, "バイト数のみ表示")
 	countChars := flag.Bool("m", false, "文字数のみ表示")
+	jsonOutput := flag.Bool("json", false, "JSON形式で出力")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: gf-wc [OPTIONS] [FILE]...\n\n行数・単語数・バイト数をカウントする。\n\nOptions:\n")
 		flag.PrintDefaults()
@@ -47,10 +54,15 @@ func main() {
 			fmt.Fprintf(os.Stderr, "gf-wc: %v\n", err)
 			os.Exit(1)
 		}
-		printCounts(c, "", showAll, *countLines, *countWords, *countBytes, *countChars)
+		if *jsonOutput {
+			printJSON(c, "")
+		} else {
+			printCounts(c, "", showAll, *countLines, *countWords, *countBytes, *countChars)
+		}
 		return
 	}
 
+	var results []fileResult
 	var total counts
 	for _, arg := range args {
 		var r io.Reader
@@ -77,14 +89,24 @@ func main() {
 			exitCode = 1
 			continue
 		}
-		printCounts(c, name, showAll, *countLines, *countWords, *countBytes, *countChars)
+		if *jsonOutput {
+			results = append(results, fileResult{name: name, counts: c})
+		} else {
+			printCounts(c, name, showAll, *countLines, *countWords, *countBytes, *countChars)
+		}
 		total.lines += c.lines
 		total.words += c.words
 		total.bytes += c.bytes
 		total.chars += c.chars
 	}
 
-	if len(args) > 1 {
+	if *jsonOutput {
+		if len(results) == 1 && len(args) == 1 {
+			printJSON(results[0].counts, results[0].name)
+		} else {
+			printJSONMulti(results, total)
+		}
+	} else if len(args) > 1 {
 		printCounts(total, "total", showAll, *countLines, *countWords, *countBytes, *countChars)
 	}
 
@@ -121,6 +143,54 @@ func countWords(line []byte) int {
 		}
 	}
 	return count
+}
+
+type jsonCounts struct {
+	File  string `json:"file,omitempty"`
+	Lines int    `json:"lines"`
+	Words int    `json:"words"`
+	Bytes int    `json:"bytes"`
+	Chars int    `json:"chars"`
+}
+
+func printJSON(c counts, name string) {
+	jc := jsonCounts{
+		File:  name,
+		Lines: c.lines,
+		Words: c.words,
+		Bytes: c.bytes,
+		Chars: c.chars,
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	enc.Encode(jc)
+}
+
+func printJSONMulti(results []fileResult, total counts) {
+	type multiOutput struct {
+		Files []jsonCounts `json:"files"`
+		Total jsonCounts   `json:"total"`
+	}
+	out := multiOutput{
+		Total: jsonCounts{
+			Lines: total.lines,
+			Words: total.words,
+			Bytes: total.bytes,
+			Chars: total.chars,
+		},
+	}
+	for _, r := range results {
+		out.Files = append(out.Files, jsonCounts{
+			File:  r.name,
+			Lines: r.counts.lines,
+			Words: r.counts.words,
+			Bytes: r.counts.bytes,
+			Chars: r.counts.chars,
+		})
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	enc.Encode(out)
 }
 
 func printCounts(c counts, name string, showAll, showLines, showWords, showBytes, showChars bool) {

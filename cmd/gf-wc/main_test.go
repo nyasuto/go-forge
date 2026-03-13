@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -314,6 +315,122 @@ func TestIntegration(t *testing.T) {
 		// 2 emoji runes + 1 newline = 3
 		if trimmed != "3" {
 			t.Errorf("got %q, want 3", trimmed)
+		}
+	})
+
+	t.Run("--json stdin入力", func(t *testing.T) {
+		stdout, _, code := runCmd(t, binary, []string{"-json"}, "hello world\nfoo\n")
+		if code != 0 {
+			t.Errorf("exit code: got %d, want 0", code)
+		}
+		var result map[string]interface{}
+		if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+			t.Fatalf("invalid JSON: %v\noutput: %q", err, stdout)
+		}
+		if int(result["lines"].(float64)) != 2 {
+			t.Errorf("lines: got %v, want 2", result["lines"])
+		}
+		if int(result["words"].(float64)) != 3 {
+			t.Errorf("words: got %v, want 3", result["words"])
+		}
+		if int(result["bytes"].(float64)) != 16 {
+			t.Errorf("bytes: got %v, want 16", result["bytes"])
+		}
+		if int(result["chars"].(float64)) != 16 {
+			t.Errorf("chars: got %v, want 16", result["chars"])
+		}
+		// stdinの場合、fileフィールドは空なので省略される
+		if _, ok := result["file"]; ok {
+			t.Errorf("expected no 'file' key for stdin, got %v", result["file"])
+		}
+	})
+
+	t.Run("--json ファイル入力", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		f := filepath.Join(tmpDir, "test.txt")
+		os.WriteFile(f, []byte("one two three\n"), 0644)
+
+		stdout, _, code := runCmd(t, binary, []string{"-json", f}, "")
+		if code != 0 {
+			t.Errorf("exit code: got %d, want 0", code)
+		}
+		var result map[string]interface{}
+		if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+			t.Fatalf("invalid JSON: %v\noutput: %q", err, stdout)
+		}
+		if result["file"] != f {
+			t.Errorf("file: got %v, want %s", result["file"], f)
+		}
+		if int(result["lines"].(float64)) != 1 {
+			t.Errorf("lines: got %v, want 1", result["lines"])
+		}
+		if int(result["words"].(float64)) != 3 {
+			t.Errorf("words: got %v, want 3", result["words"])
+		}
+	})
+
+	t.Run("--json 複数ファイル", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		f1 := filepath.Join(tmpDir, "a.txt")
+		f2 := filepath.Join(tmpDir, "b.txt")
+		os.WriteFile(f1, []byte("one\n"), 0644)
+		os.WriteFile(f2, []byte("two three\n"), 0644)
+
+		stdout, _, code := runCmd(t, binary, []string{"-json", f1, f2}, "")
+		if code != 0 {
+			t.Errorf("exit code: got %d, want 0", code)
+		}
+		var result map[string]interface{}
+		if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+			t.Fatalf("invalid JSON: %v\noutput: %q", err, stdout)
+		}
+		files, ok := result["files"].([]interface{})
+		if !ok {
+			t.Fatalf("expected 'files' array, got %T", result["files"])
+		}
+		if len(files) != 2 {
+			t.Errorf("expected 2 files, got %d", len(files))
+		}
+		total, ok := result["total"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected 'total' object, got %T", result["total"])
+		}
+		if int(total["lines"].(float64)) != 2 {
+			t.Errorf("total lines: got %v, want 2", total["lines"])
+		}
+		if int(total["words"].(float64)) != 3 {
+			t.Errorf("total words: got %v, want 3", total["words"])
+		}
+	})
+
+	t.Run("--json マルチバイト", func(t *testing.T) {
+		stdout, _, code := runCmd(t, binary, []string{"-json"}, "こんにちは\n")
+		if code != 0 {
+			t.Errorf("exit code: got %d, want 0", code)
+		}
+		var result map[string]interface{}
+		if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+			t.Fatalf("invalid JSON: %v\noutput: %q", err, stdout)
+		}
+		if int(result["bytes"].(float64)) != 16 {
+			t.Errorf("bytes: got %v, want 16", result["bytes"])
+		}
+		if int(result["chars"].(float64)) != 6 {
+			t.Errorf("chars: got %v, want 6", result["chars"])
+		}
+	})
+
+	t.Run("--json 空入力", func(t *testing.T) {
+		stdout, _, code := runCmd(t, binary, []string{"-json"}, "")
+		if code != 0 {
+			t.Errorf("exit code: got %d, want 0", code)
+		}
+		var result map[string]interface{}
+		if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+			t.Fatalf("invalid JSON: %v\noutput: %q", err, stdout)
+		}
+		if int(result["lines"].(float64)) != 0 {
+			t.Errorf("lines: got %v, want 0", result["lines"])
 		}
 	})
 }
