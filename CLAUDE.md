@@ -25,14 +25,15 @@ goforge/
 ## ビルド・テスト
 
 ```bash
-# 特定ツールのテスト
+# 特定ツールのテスト（ツールのディレクトリで実行）
 cd cmd/gf-xxx && go test -v ./...
 
 # 特定ツールのビルド
 cd cmd/gf-xxx && go build -o gf-xxx .
 
-# 全ツールテスト（go.work経由）
-go test ./cmd/...
+# 全ツールテスト・品質チェック（プロジェクトルートで実行）
+make test
+make quality
 ```
 
 ## コミットポリシー
