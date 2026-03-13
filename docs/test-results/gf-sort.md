@@ -30,3 +30,51 @@
 | FileInput/multiple_files_merged_and_sorted | 複数ファイル結合ソート | PASS |
 | FileInput/nonexistent_file | 存在しないファイル→exit 1 | PASS |
 | FileInput/stdin_via_hyphen | ハイフンでstdin読み取り | PASS |
+
+## Tier 2: -n 数値ソート、-r 逆順、-k キー指定、-u 重複除去
+
+### 実行日: 2026-03-14
+
+### テスト結果: ALL PASS (34件追加、累計51件)
+
+#### 単体テスト (18件追加)
+| テスト名 | 内容 | 結果 |
+|----------|------|------|
+| ExtractKey/no_key_field | キー指定なし→行全体 | PASS |
+| ExtractKey/field_1 | フィールド1抽出 | PASS |
+| ExtractKey/field_2 | フィールド2抽出 | PASS |
+| ExtractKey/field_3 | フィールド3抽出 | PASS |
+| ExtractKey/field_out_of_range | 範囲外→空文字 | PASS |
+| ExtractKey/multiple_spaces | 複数スペース区切り | PASS |
+| ExtractKey/tabs | タブ区切り | PASS |
+| ParseNumber/integer | 整数パース | PASS |
+| ParseNumber/negative | 負数パース | PASS |
+| ParseNumber/float | 浮動小数点パース | PASS |
+| ParseNumber/non-numeric | 非数値→0 | PASS |
+| ParseNumber/empty | 空文字→0 | PASS |
+| ParseNumber/leading_spaces | 前後スペース付き数値 | PASS |
+| Dedup/no_duplicates | 重複なし | PASS |
+| Dedup/consecutive_duplicates | 連続重複除去 | PASS |
+| Dedup/all_same | 全て同一 | PASS |
+| Dedup/empty | 空スライス | PASS |
+| Dedup/single | 単一要素 | PASS |
+
+#### 統合テスト (16件追加)
+| テスト名 | 内容 | 結果 |
+|----------|------|------|
+| Tier2Options/numeric_sort_-n | 数値ソート | PASS |
+| Tier2Options/numeric_sort_with_non-numeric_lines | 非数値行混在の数値ソート | PASS |
+| Tier2Options/numeric_sort_negative_numbers | 負数の数値ソート | PASS |
+| Tier2Options/numeric_sort_floats | 浮動小数点数値ソート | PASS |
+| Tier2Options/reverse_sort_-r | 逆順ソート | PASS |
+| Tier2Options/reverse_numeric_sort_-n_-r | 逆順数値ソート | PASS |
+| Tier2Options/unique_-u | 重複除去 | PASS |
+| Tier2Options/unique_numeric_-n_-u | 数値ソート+重複除去 | PASS |
+| Tier2Options/key_field_-k_2 | フィールド2でソート | PASS |
+| Tier2Options/key_field_numeric_-k_2_-n | フィールド2で数値ソート | PASS |
+| Tier2Options/key_field_with_reverse_-k_1_-r | フィールド1で逆順ソート | PASS |
+| Tier2Options/key_out_of_range_treated_as_empty | 範囲外キー→空文字扱い | PASS |
+| Tier2Options/unique_with_reverse_-u_-r | 逆順+重複除去 | PASS |
+| Tier2Options/all_options_combined_-k_2_-n_-r_-u | 全オプション組み合わせ | PASS |
+| Tier2Options/empty_input_with_options | 空入力+オプション | PASS |
+| Tier2Options/multibyte_with_reverse | マルチバイト逆順ソート | PASS |

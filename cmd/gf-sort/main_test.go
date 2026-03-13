@@ -85,6 +85,81 @@ func TestUnit_ReadLinesFrom(t *testing.T) {
 	}
 }
 
+func TestUnit_ExtractKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		line     string
+		keyField int
+		want     string
+	}{
+		{"no key field", "hello world", 0, "hello world"},
+		{"field 1", "banana apple cherry", 1, "banana"},
+		{"field 2", "banana apple cherry", 2, "apple"},
+		{"field 3", "banana apple cherry", 3, "cherry"},
+		{"field out of range", "banana apple", 5, ""},
+		{"multiple spaces", "  foo   bar  ", 1, "foo"},
+		{"tabs", "foo\tbar\tbaz", 2, "bar"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractKey(tt.line, tt.keyField)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnit_ParseNumber(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want float64
+	}{
+		{"integer", "42", 42},
+		{"negative", "-10", -10},
+		{"float", "3.14", 3.14},
+		{"non-numeric", "abc", 0},
+		{"empty", "", 0},
+		{"leading spaces", "  100  ", 100},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseNumber(tt.s)
+			if got != tt.want {
+				t.Errorf("got %f, want %f", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnit_Dedup(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []string
+		want  []string
+	}{
+		{"no duplicates", []string{"a", "b", "c"}, []string{"a", "b", "c"}},
+		{"consecutive duplicates", []string{"a", "a", "b", "b", "c"}, []string{"a", "b", "c"}},
+		{"all same", []string{"x", "x", "x"}, []string{"x"}},
+		{"empty", []string{}, []string{}},
+		{"single", []string{"a"}, []string{"a"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dedup(tt.input)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d lines, want %d: %v", len(got), len(tt.want), got)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("line %d: got %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 // Integration tests
 func TestIntegration_BasicSort(t *testing.T) {
 	bin := buildBinary(t)
@@ -214,6 +289,127 @@ func TestIntegration_FileInput(t *testing.T) {
 			}
 			if tt.wantErr != "" && !strings.Contains(stderr, tt.wantErr) {
 				t.Errorf("stderr: got %q, want containing %q", stderr, tt.wantErr)
+			}
+			if code != tt.wantCode {
+				t.Errorf("exit code: got %d, want %d", code, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestIntegration_Tier2Options(t *testing.T) {
+	bin := buildBinary(t)
+
+	tests := []struct {
+		name     string
+		stdin    string
+		args     []string
+		wantOut  string
+		wantCode int
+	}{
+		{
+			name:    "numeric sort -n",
+			stdin:   "10\n2\n1\n20\n3\n",
+			args:    []string{"-n"},
+			wantOut: "1\n2\n3\n10\n20\n",
+		},
+		{
+			name:    "numeric sort with non-numeric lines",
+			stdin:   "10\nabc\n2\n",
+			args:    []string{"-n"},
+			wantOut: "abc\n2\n10\n",
+		},
+		{
+			name:    "numeric sort negative numbers",
+			stdin:   "5\n-3\n0\n-10\n7\n",
+			args:    []string{"-n"},
+			wantOut: "-10\n-3\n0\n5\n7\n",
+		},
+		{
+			name:    "numeric sort floats",
+			stdin:   "3.14\n1.5\n2.71\n",
+			args:    []string{"-n"},
+			wantOut: "1.5\n2.71\n3.14\n",
+		},
+		{
+			name:    "reverse sort -r",
+			stdin:   "apple\ncherry\nbanana\n",
+			args:    []string{"-r"},
+			wantOut: "cherry\nbanana\napple\n",
+		},
+		{
+			name:    "reverse numeric sort -n -r",
+			stdin:   "10\n2\n1\n20\n3\n",
+			args:    []string{"-n", "-r"},
+			wantOut: "20\n10\n3\n2\n1\n",
+		},
+		{
+			name:    "unique -u",
+			stdin:   "b\na\nb\na\nc\n",
+			args:    []string{"-u"},
+			wantOut: "a\nb\nc\n",
+		},
+		{
+			name:    "unique numeric -n -u",
+			stdin:   "2\n1\n2\n3\n1\n",
+			args:    []string{"-n", "-u"},
+			wantOut: "1\n2\n3\n",
+		},
+		{
+			name:    "key field -k 2",
+			stdin:   "foo 3\nbar 1\nbaz 2\n",
+			args:    []string{"-k", "2"},
+			wantOut: "bar 1\nbaz 2\nfoo 3\n",
+		},
+		{
+			name:    "key field numeric -k 2 -n",
+			stdin:   "foo 10\nbar 2\nbaz 20\n",
+			args:    []string{"-k", "2", "-n"},
+			wantOut: "bar 2\nfoo 10\nbaz 20\n",
+		},
+		{
+			name:    "key field with reverse -k 1 -r",
+			stdin:   "cherry 1\napple 2\nbanana 3\n",
+			args:    []string{"-k", "1", "-r"},
+			wantOut: "cherry 1\nbanana 3\napple 2\n",
+		},
+		{
+			name:    "key out of range treated as empty",
+			stdin:   "a b\nc\nd e f\n",
+			args:    []string{"-k", "3"},
+			wantOut: "a b\nc\nd e f\n",
+		},
+		{
+			name:    "unique with reverse -u -r",
+			stdin:   "a\nb\na\nc\nb\n",
+			args:    []string{"-u", "-r"},
+			wantOut: "c\nb\na\n",
+		},
+		{
+			name:    "all options combined -k 2 -n -r -u",
+			stdin:   "x 5\ny 3\nz 5\nw 1\ny 3\n",
+			args:    []string{"-k", "2", "-n", "-r", "-u"},
+			wantOut: "z 5\nx 5\ny 3\nw 1\n",
+		},
+		{
+			name:    "empty input with options",
+			stdin:   "",
+			args:    []string{"-n", "-r", "-u"},
+			wantOut: "",
+		},
+		{
+			name:    "multibyte with reverse",
+			stdin:   "みかん\nりんご\nばなな\n",
+			args:    []string{"-r"},
+			wantOut: "りんご\nみかん\nばなな\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, _, code := runWithStdin(t, bin, tt.stdin, tt.args...)
+			if stdout != tt.wantOut {
+				t.Errorf("stdout:\ngot:  %q\nwant: %q", stdout, tt.wantOut)
 			}
 			if code != tt.wantCode {
 				t.Errorf("exit code: got %d, want %d", code, tt.wantCode)

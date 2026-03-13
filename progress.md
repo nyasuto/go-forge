@@ -96,3 +96,7 @@
 ## gf-sort Tier 1: コア機能
 - 完了日: 2026-03-14
 - 作業内容: cmd/gf-sort/ 作成（go.mod初期化、go.workに追加）。辞書順ソート（`sort.Strings`）、stdin対応（引数なし・ハイフン）、複数ファイル入力の結合ソート、--version表示、エラーハンドリング（存在しないファイル→exit 1）。単体テスト4件+統合テスト13件、全17件PASS。
+
+## gf-sort Tier 2: -n 数値ソート、-r 逆順、-k キー指定、-u 重複除去
+- 完了日: 2026-03-14
+- 作業内容: `-n`数値ソート（`strconv.ParseFloat`）、`-r`逆順ソート、`-k`キーフィールド指定（1-based、`strings.Fields`で分割）、`-u`重複除去（ソート後の隣接重複行を除去）を追加。`sort.SliceStable`で安定ソート。`extractKey`/`parseNumber`/`dedup`関数を実装。全オプションの組み合わせに対応。単体テスト18件+統合テスト16件追加、累計51件ALL PASS。
