@@ -92,3 +92,52 @@
 - **正常系**: skip 4バイト、skip 16バイト（行境界）、limit 5バイト、limit 16バイト、skip+limit組み合わせ、ファイル・stdinでのフラグ動作
 - **異常系**: 負のskip値（exit 2）、負のlimit値（exit 2）
 - **エッジケース**: skip 0（noop）、skipが入力超過（空出力）、limit 0（空出力）、limitが入力より大（全出力）、skip+limitで1バイトのみ
+
+## Tier 3: カラー出力（NULL, 印字可能, 制御文字で色分け）
+
+実行日: 2026-03-14
+
+### テスト結果: ALL PASS (累計62件、追加22件)
+
+```
+=== RUN   TestByteColor
+=== RUN   TestByteColor/null_byte
+=== RUN   TestByteColor/printable_A
+=== RUN   TestByteColor/printable_space
+=== RUN   TestByteColor/printable_tilde
+=== RUN   TestByteColor/control_tab
+=== RUN   TestByteColor/control_newline
+=== RUN   TestByteColor/control_0x01
+=== RUN   TestByteColor/control_0x1f
+=== RUN   TestByteColor/control_DEL
+=== RUN   TestByteColor/high_byte_0x80
+=== RUN   TestByteColor/high_byte_0xff
+--- PASS: TestByteColor (11件)
+
+=== RUN   TestFormatLineColor
+=== RUN   TestFormatLineColor/null_bytes_get_dim_color
+=== RUN   TestFormatLineColor/printable_bytes_get_green
+=== RUN   TestFormatLineColor/control_bytes_get_red
+=== RUN   TestFormatLineColor/high_bytes_get_blue
+=== RUN   TestFormatLineColor/mixed_bytes
+--- PASS: TestFormatLineColor (5件)
+
+=== RUN   TestColorNoColor
+--- PASS: TestColorNoColor (1件)
+
+=== RUN   TestRunColorFlag
+=== RUN   TestRunColorFlag/color_always
+=== RUN   TestRunColorFlag/color_never
+=== RUN   TestRunColorFlag/color_auto_with_non-terminal
+=== RUN   TestRunColorFlag/invalid_color_mode
+--- PASS: TestRunColorFlag (4件)
+
+=== RUN   TestHexdumpExactly16Bytes (既存1件)
+=== RUN   TestHexdump17Bytes (既存1件)
+```
+
+### テストカバレッジ（Tier 3追加分）
+
+- **正常系**: NULL→dim、印字可能→緑、制御文字→赤、高バイト→青の色分け、混合バイトの色分け
+- **異常系**: 不正なカラーモード（exit 2）
+- **エッジケース**: color=false時にエスケープシーケンスが含まれないこと、auto時に非ターミナルでカラー無効

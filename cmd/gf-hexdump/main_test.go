@@ -50,7 +50,7 @@ func TestFormatLine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			formatLine(&buf, tt.offset, tt.data)
+			formatLine(&buf, tt.offset, tt.data, false)
 			got := buf.String()
 			if got != tt.want {
 				t.Errorf("formatLine() =\n%q\nwant:\n%q", got, tt.want)
@@ -511,5 +511,177 @@ func TestHexdump17Bytes(t *testing.T) {
 	// Second line should have offset 0x10
 	if !strings.HasPrefix(lines[1], "00000010") {
 		t.Errorf("second line should start with 00000010, got: %s", lines[1])
+	}
+}
+
+func TestByteColor(t *testing.T) {
+	tests := []struct {
+		name string
+		b    byte
+		want string
+	}{
+		{"null byte", 0x00, "\033[2m"},
+		{"printable A", 0x41, "\033[32m"},
+		{"printable space", 0x20, "\033[32m"},
+		{"printable tilde", 0x7e, "\033[32m"},
+		{"control tab", 0x09, "\033[31m"},
+		{"control newline", 0x0a, "\033[31m"},
+		{"control 0x01", 0x01, "\033[31m"},
+		{"control 0x1f", 0x1f, "\033[31m"},
+		{"control DEL", 0x7f, "\033[31m"},
+		{"high byte 0x80", 0x80, "\033[34m"},
+		{"high byte 0xff", 0xff, "\033[34m"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := byteColor(tt.b)
+			if got != tt.want {
+				t.Errorf("byteColor(0x%02x) = %q, want %q", tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatLineColor(t *testing.T) {
+	tests := []struct {
+		name     string
+		offset   int
+		data     []byte
+		contains []string
+	}{
+		{
+			name:   "null bytes get dim color",
+			offset: 0,
+			data:   []byte{0x00},
+			contains: []string{
+				"\033[2m00\033[0m",  // hex colored
+				"\033[2m.\033[0m",   // ASCII colored
+			},
+		},
+		{
+			name:   "printable bytes get green",
+			offset: 0,
+			data:   []byte("A"),
+			contains: []string{
+				"\033[32m41\033[0m",  // hex colored
+				"\033[32mA\033[0m",   // ASCII colored
+			},
+		},
+		{
+			name:   "control bytes get red",
+			offset: 0,
+			data:   []byte{0x01},
+			contains: []string{
+				"\033[31m01\033[0m",  // hex colored
+				"\033[31m.\033[0m",   // ASCII colored
+			},
+		},
+		{
+			name:   "high bytes get blue",
+			offset: 0,
+			data:   []byte{0xff},
+			contains: []string{
+				"\033[34mff\033[0m",  // hex colored
+				"\033[34m.\033[0m",   // ASCII colored
+			},
+		},
+		{
+			name:   "mixed bytes",
+			offset: 0,
+			data:   []byte{0x00, 0x41, 0x01, 0x80},
+			contains: []string{
+				"\033[2m00\033[0m",   // null
+				"\033[32m41\033[0m",  // printable
+				"\033[31m01\033[0m",  // control
+				"\033[34m80\033[0m",  // high
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			formatLine(&buf, tt.offset, tt.data, true)
+			got := buf.String()
+			for _, s := range tt.contains {
+				if !strings.Contains(got, s) {
+					t.Errorf("color output missing %q\ngot:\n%q", s, got)
+				}
+			}
+		})
+	}
+}
+
+func TestColorNoColor(t *testing.T) {
+	// Verify color=false produces no escape sequences
+	data := []byte{0x00, 0x41, 0x01, 0xff}
+	var buf bytes.Buffer
+	formatLine(&buf, 0, data, false)
+	got := buf.String()
+	if strings.Contains(got, "\033[") {
+		t.Errorf("no-color output contains escape sequences:\n%q", got)
+	}
+}
+
+func TestRunColorFlag(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		stdin    string
+		wantCode int
+		hasColor bool
+		errMsg   string
+	}{
+		{
+			name:     "color always",
+			args:     []string{"--color", "always"},
+			stdin:    "AB",
+			wantCode: 0,
+			hasColor: true,
+		},
+		{
+			name:     "color never",
+			args:     []string{"--color", "never"},
+			stdin:    "AB",
+			wantCode: 0,
+			hasColor: false,
+		},
+		{
+			name:     "color auto with non-terminal",
+			args:     []string{"--color", "auto"},
+			stdin:    "AB",
+			wantCode: 0,
+			hasColor: false, // bytes.Buffer is not a terminal
+		},
+		{
+			name:     "invalid color mode",
+			args:     []string{"--color", "invalid"},
+			stdin:    "",
+			wantCode: 2,
+			errMsg:   "invalid color mode",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			stdin := strings.NewReader(tt.stdin)
+			code := run(tt.args, stdin, &stdout, &stderr)
+			if code != tt.wantCode {
+				t.Errorf("run() code = %d, want %d\nstderr: %s", code, tt.wantCode, stderr.String())
+			}
+			if tt.wantCode == 0 {
+				hasEsc := strings.Contains(stdout.String(), "\033[")
+				if tt.hasColor && !hasEsc {
+					t.Errorf("expected color output but got none:\n%q", stdout.String())
+				}
+				if !tt.hasColor && hasEsc {
+					t.Errorf("expected no color but got escape sequences:\n%q", stdout.String())
+				}
+			}
+			if tt.errMsg != "" && !strings.Contains(stderr.String(), tt.errMsg) {
+				t.Errorf("stderr missing %q\ngot: %s", tt.errMsg, stderr.String())
+			}
+		})
 	}
 }

@@ -326,7 +326,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 - [x] Tier 1: `cmd/gf-hexdump/` 作成（go.mod初期化、go.workに追加）。16バイトずつの16進ダンプ表示、stdin対応。テスト作成・通過。テスト結果を `docs/test-results/gf-hexdump.md` に記録。
 - [x] Tier 2: ASCII併記、`-s` オフセット指定、`-n` 読み取りバイト数制限。テスト追加・通過。テスト結果を更新。
-- [ ] Tier 3: カラー出力（NULL, 印字可能, 制御文字で色分け）。テスト追加・通過。テスト結果を更新。
+- [x] Tier 3: カラー出力（NULL, 印字可能, 制御文字で色分け）。テスト追加・通過。テスト結果を更新。
 
 ---
 

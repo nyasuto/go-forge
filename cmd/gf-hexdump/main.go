@@ -7,6 +7,15 @@ import (
 	"os"
 )
 
+// ANSI color codes
+const (
+	colorReset   = "\033[0m"
+	colorNull    = "\033[2m"      // dim for NULL bytes
+	colorPrint   = "\033[32m"     // green for printable
+	colorControl = "\033[31m"     // red for control characters
+	colorHigh    = "\033[34m"     // blue for high bytes (0x80-0xff)
+)
+
 const version = "0.1.0"
 
 func main() {
@@ -16,6 +25,7 @@ func main() {
 type hexdumpOptions struct {
 	skip  int64
 	limit int64
+	color bool
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -24,6 +34,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	showVersion := fs.Bool("version", false, "show version")
 	skip := fs.Int64("s", 0, "skip offset bytes from the beginning")
 	limit := fs.Int64("n", -1, "read only N bytes")
+	colorMode := fs.String("color", "auto", "color output: auto|always|never")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -44,7 +55,25 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	opts := hexdumpOptions{skip: *skip, limit: *limit}
+	useColor := false
+	switch *colorMode {
+	case "always":
+		useColor = true
+	case "never":
+		useColor = false
+	case "auto":
+		if f, ok := stdout.(*os.File); ok {
+			info, err := f.Stat()
+			if err == nil && (info.Mode()&os.ModeCharDevice) != 0 {
+				useColor = true
+			}
+		}
+	default:
+		fmt.Fprintf(stderr, "gf-hexdump: invalid color mode: %s\n", *colorMode)
+		return 2
+	}
+
+	opts := hexdumpOptions{skip: *skip, limit: *limit, color: useColor}
 	files := fs.Args()
 
 	if len(files) == 0 || (len(files) == 1 && files[0] == "-") {
@@ -98,7 +127,7 @@ func hexdump(r io.Reader, stdout, stderr io.Writer, opts hexdumpOptions) int {
 	for {
 		n, err := io.ReadFull(reader, buf)
 		if n > 0 {
-			formatLine(stdout, offset, buf[:n])
+			formatLine(stdout, offset, buf[:n], opts.color)
 			offset += n
 		}
 		if err != nil {
@@ -112,7 +141,20 @@ func hexdump(r io.Reader, stdout, stderr io.Writer, opts hexdumpOptions) int {
 	return 0
 }
 
-func formatLine(w io.Writer, offset int, data []byte) {
+func byteColor(b byte) string {
+	switch {
+	case b == 0x00:
+		return colorNull
+	case b >= 0x20 && b <= 0x7e:
+		return colorPrint
+	case b >= 0x80:
+		return colorHigh
+	default:
+		return colorControl
+	}
+}
+
+func formatLine(w io.Writer, offset int, data []byte, color bool) {
 	// Offset
 	fmt.Fprintf(w, "%08x  ", offset)
 
@@ -122,7 +164,11 @@ func formatLine(w io.Writer, offset int, data []byte) {
 			fmt.Fprint(w, " ")
 		}
 		if i < len(data) {
-			fmt.Fprintf(w, "%02x ", data[i])
+			if color {
+				fmt.Fprintf(w, "%s%02x%s ", byteColor(data[i]), data[i], colorReset)
+			} else {
+				fmt.Fprintf(w, "%02x ", data[i])
+			}
 		} else {
 			fmt.Fprint(w, "   ")
 		}
@@ -132,9 +178,17 @@ func formatLine(w io.Writer, offset int, data []byte) {
 	fmt.Fprint(w, " |")
 	for i := 0; i < len(data); i++ {
 		if data[i] >= 0x20 && data[i] <= 0x7e {
-			fmt.Fprintf(w, "%c", data[i])
+			if color {
+				fmt.Fprintf(w, "%s%c%s", colorPrint, data[i], colorReset)
+			} else {
+				fmt.Fprintf(w, "%c", data[i])
+			}
 		} else {
-			fmt.Fprint(w, ".")
+			if color {
+				fmt.Fprintf(w, "%s.%s", byteColor(data[i]), colorReset)
+			} else {
+				fmt.Fprint(w, ".")
+			}
 		}
 	}
 	fmt.Fprintln(w, "|")

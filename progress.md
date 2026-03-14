@@ -196,3 +196,7 @@
 ## gf-hexdump Tier 2: -s オフセット指定・-n バイト数制限
 - 完了日: 2026-03-14
 - 作業内容: `-s`オフセット指定オプション追加（`io.Seeker`対応時はSeek、非対応時は`io.CopyN`でスキップ）。`-n`バイト数制限オプション追加（`io.LimitReader`で読み取りバイト数を制限）。`hexdumpOptions`構造体でオプション管理。skip後のオフセット表示は実際のファイル位置を反映。負値バリデーション（-s負値→exit 2、-n負値→exit 2）。ファイル・stdinの両方で動作。単体テスト10件（skip 4件+limit 4件+組み合わせ2件）+統合テスト7件追加、累計40件ALL PASS。
+
+## gf-hexdump Tier 3: カラー出力（NULL, 印字可能, 制御文字で色分け）
+- 完了日: 2026-03-14
+- 作業内容: `--color`フラグ追加（auto/always/never）。`byteColor`関数でバイト値に応じた色分け（NULL→dim、印字可能0x20-0x7e→緑、制御文字0x01-0x1f,0x7f→赤、高バイト0x80-0xff→青）。hexバイト部分とASCII部分の両方をカラー化。autoモードは`os.ModeCharDevice`でターミナル検出。不正なカラーモードはexit 2。単体テスト22件追加（byteColor 11件+formatLineColor 5件+colorNoColor 1件+runColorFlag 4件+既存1件）、累計62件ALL PASS。
