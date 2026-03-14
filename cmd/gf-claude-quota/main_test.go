@@ -319,6 +319,109 @@ func TestRunWatch_NotifyAtWithThreshold(t *testing.T) {
 	}
 }
 
+func TestRun_SetupSubcommand(t *testing.T) {
+	stdout, err := os.CreateTemp("", "stdout-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(stdout.Name())
+	defer stdout.Close()
+
+	stderr, err := os.CreateTemp("", "stderr-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(stderr.Name())
+	defer stderr.Close()
+
+	code := run([]string{"setup", "--tmux"}, stdout, stderr, strings.NewReader(""))
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+
+	stdout.Seek(0, 0)
+	buf := make([]byte, 4096)
+	n, _ := stdout.Read(buf)
+	out := string(buf[:n])
+
+	if !strings.Contains(out, "tmux") {
+		t.Errorf("output should contain 'tmux', got %q", out)
+	}
+}
+
+func TestRun_SetupInvalidFlag(t *testing.T) {
+	stdout, err := os.CreateTemp("", "stdout-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(stdout.Name())
+	defer stdout.Close()
+
+	stderr, err := os.CreateTemp("", "stderr-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(stderr.Name())
+	defer stderr.Close()
+
+	code := run([]string{"setup", "--invalid"}, stdout, stderr, strings.NewReader(""))
+	if code != 2 {
+		t.Errorf("exit code = %d, want 2", code)
+	}
+}
+
+func TestRun_SetupStarship(t *testing.T) {
+	stdout, err := os.CreateTemp("", "stdout-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(stdout.Name())
+	defer stdout.Close()
+
+	stderr, err := os.CreateTemp("", "stderr-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(stderr.Name())
+	defer stderr.Close()
+
+	code := run([]string{"setup", "--starship"}, stdout, stderr, strings.NewReader(""))
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+
+	stdout.Seek(0, 0)
+	buf := make([]byte, 4096)
+	n, _ := stdout.Read(buf)
+	out := string(buf[:n])
+
+	if !strings.Contains(out, "starship") {
+		t.Errorf("output should contain 'starship', got %q", out)
+	}
+}
+
+func TestRun_SetupDryRun(t *testing.T) {
+	stdout, err := os.CreateTemp("", "stdout-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(stdout.Name())
+	defer stdout.Close()
+
+	stderr, err := os.CreateTemp("", "stderr-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(stderr.Name())
+	defer stderr.Close()
+
+	code := run([]string{"setup", "--dry-run"}, stdout, stderr, strings.NewReader(""))
+	// May return 0 or 1 depending on whether binary is found
+	if code == 2 {
+		t.Errorf("exit code = %d, should not be 2 for valid flags", code)
+	}
+}
+
 func TestPrintUsage_AllModes(t *testing.T) {
 	origNow := output.NowFunc
 	defer func() { output.NowFunc = origNow }()

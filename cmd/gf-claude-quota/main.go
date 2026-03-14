@@ -13,6 +13,7 @@ import (
 	"gf-claude-quota/internal/cache"
 	"gf-claude-quota/internal/credentials"
 	"gf-claude-quota/internal/output"
+	"gf-claude-quota/internal/setup"
 )
 
 const version = "0.1.0"
@@ -22,6 +23,11 @@ func main() {
 }
 
 func run(args []string, stdout, stderr *os.File, stdin io.Reader) int {
+	// Check for "setup" subcommand
+	if len(args) > 0 && args[0] == "setup" {
+		return runSetup(args[1:], stdout, stderr)
+	}
+
 	fs := flag.NewFlagSet("gf-claude-quota", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
@@ -224,6 +230,25 @@ func runWatch(stdout, stderr *os.File, opts *runOptions, intervalSec int, notify
 		default:
 		}
 	}
+}
+
+func runSetup(args []string, stdout, stderr *os.File) int {
+	fs := flag.NewFlagSet("gf-claude-quota setup", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
+	tmux := fs.Bool("tmux", false, "output tmux statusbar configuration")
+	starship := fs.Bool("starship", false, "output starship module configuration")
+	dryRun := fs.Bool("dry-run", false, "preview changes without applying")
+
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	return setup.Run(stdout, stderr, &setup.SetupOptions{
+		Tmux:     *tmux,
+		Starship: *starship,
+		DryRun:   *dryRun,
+	})
 }
 
 func printUsage(out *os.File, usage *api.UsageResponse, opts *runOptions) {

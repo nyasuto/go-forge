@@ -198,3 +198,41 @@
 - sleepFunc変数でテスト時のスリープ差し替え対応
 
 ### テスト合計: 88件（main: 16件 + api: 6件 + cache: 13件 + credentials: 5件 + output: 48件）、全PASS
+
+---
+
+## Phase 6: 自動セットアップ
+
+### 実行日: 2026-03-14
+
+### テスト結果: ALL PASS
+
+### テスト内訳
+
+#### internal/setup/setup_test.go (11件)
+- TestPrintTmuxConfig: tmux設定例出力（バイナリパス、--oneline、status-interval含有確認）
+- TestPrintStarshipConfig: starship設定例出力（[custom.claude_quota]、バイナリパス含有確認）
+- TestSetupStatusLine_NewFile: 新規settings.json作成、statusLineフィールド追加
+- TestSetupStatusLine_ExistingSettings: 既存設定の保持、バックアップファイル作成、statusLine追加
+- TestSetupStatusLine_AlreadyConfigured: 既に同一設定の場合はスキップ（"already configured"）
+- TestSetupStatusLine_DryRun: --dry-runで変更プレビューのみ（ファイル未作成確認）
+- TestSetupStatusLine_DryRunWithExisting: 既存ファイルに対するdry-run（ファイル未変更確認）
+- TestSetupStatusLine_InvalidJSON: 不正JSONのsettings.jsonでexit 1
+- TestSetupStatusLine_NoHomeDir: ホームディレクトリ不明でexit 1
+- TestSetupStatusLine_OverwriteExistingStatusLine: 別のstatusLine値を上書き（バックアップ付き）
+- TestSetupStatusLine_NestedDirectory: ネストされたディレクトリの自動作成
+
+#### main_test.go (4件追加)
+- TestRun_SetupSubcommand: `setup --tmux` サブコマンドの動作確認
+- TestRun_SetupInvalidFlag: `setup --invalid` で exit 2
+- TestRun_SetupStarship: `setup --starship` サブコマンドの動作確認
+- TestRun_SetupDryRun: `setup --dry-run` サブコマンドの動作確認
+
+#### 新規ファイル
+- `internal/setup/setup.go` — Run関数、Settings型、SetupOptions構造体、setupStatusLine（settings.json読み書き・バックアップ・重複検出）、printTmuxConfig、printStarshipConfig、FindBinaryPath（LookPath+Executable）、SettingsPath（テスト差し替え可能）
+
+#### main.go 変更
+- `setup` サブコマンド分岐追加（args[0] == "setup" で runSetup にディスパッチ）
+- runSetup関数追加（--tmux, --starship, --dry-run フラグパース）
+
+### テスト合計: 103件（main: 20件 + api: 6件 + cache: 13件 + credentials: 5件 + output: 48件 + setup: 11件）、全PASS

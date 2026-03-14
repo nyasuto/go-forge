@@ -356,7 +356,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 #### Phase 6: 自動セットアップ
 
-- [ ] `setup` サブコマンド — `~/.claude/settings.json` を読み取り、statusLineフィールドを追加（既存設定はバックアップ）、バイナリパス自動検出。`--tmux`（tmux statusbar設定例出力）、`--starship`（starship module設定例出力）、`--dry-run`（変更プレビューのみ）。テスト追加・通過。テスト結果を更新。
+- [x] `setup` サブコマンド — `~/.claude/settings.json` を読み取り、statusLineフィールドを追加（既存設定はバックアップ）、バイナリパス自動検出。`--tmux`（tmux statusbar設定例出力）、`--starship`（starship module設定例出力）、`--dry-run`（変更プレビューのみ）。テスト追加・通過。テスト結果を更新。
 
 #### Phase 7: Linux対応・クロスプラットフォーム
 

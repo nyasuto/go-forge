@@ -220,3 +220,7 @@
 ## gf-claude-quota Phase 5: ウォッチモード・閾値通知
 - 完了日: 2026-03-14
 - 作業内容: `internal/output/watch.go` 新規作成。`Notifier`構造体で閾値ベースの通知管理（同一セッション重複通知防止、閾値以下への下降後の再発火対応）。macOS `osascript`で通知センターに送信。`ClearTerminalSeq`関数でANSIターミナルクリア。main.goに`--watch`フラグ（`signal.NotifyContext`でCtrl-C終了、ポーリングループ、ターミナルクリア＆再描画）、`--interval`フラグ（デフォルト60秒、正値バリデーション）、`--notify-at`フラグ（0-100範囲バリデーション）追加。`runOptions`構造体でオプション管理を整理、`fetchUsage`関数でキャッシュ→APIフローを分離、`sleepFunc`変数でテスト時のスリープ差し替え対応。テスト15件追加、累計88件ALL PASS。
+
+## gf-claude-quota Phase 6: 自動セットアップ
+- 完了日: 2026-03-14
+- 作業内容: `internal/setup/setup.go` 新規作成。`setup` サブコマンド実装。`~/.claude/settings.json` を読み取りstatusLineフィールドを追加（既存設定はバックアップ付き保存）。バイナリパス自動検出（`exec.LookPath` → `os.Executable` フォールバック）。`--tmux` でtmux statusbar設定例出力、`--starship` でstarship module設定例出力、`--dry-run` で変更プレビューのみ表示。既に同一設定の場合はスキップ。不正JSONの既存ファイルはエラー終了。テスト15件追加（setup_test.go 11件 + main_test.go 4件）、累計103件ALL PASS。
