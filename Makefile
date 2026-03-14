@@ -1,4 +1,4 @@
-.PHONY: build test quality
+.PHONY: build test lint fmt quality
 
 # 全ツールのディレクトリを自動検出
 TOOLS := $(wildcard cmd/gf-*)
@@ -15,9 +15,16 @@ test:
 		(cd $$tool && go test -v ./...); \
 	done
 
-quality: test
+lint:
 	@for tool in $(TOOLS); do \
-		echo "Vetting $$tool..."; \
-		(cd $$tool && go vet ./...); \
+		echo "Linting $$tool..."; \
+		(cd $$tool && golangci-lint run --config ../../.golangci.yml ./...); \
 	done
+
+fmt:
+	@for tool in $(TOOLS); do \
+		(cd $$tool && gofmt -l .); \
+	done
+
+quality: test lint
 	@echo "All quality checks passed."

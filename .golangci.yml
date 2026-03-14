@@ -1,0 +1,34 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Writer).Write
+        - (*bufio.Writer).Flush
+        - (*bufio.Writer).Write
+        - (*os.File).Close
+        - (*os.File).Seek
+        - (encoding/json.Encoder).Encode
+        - (*bytes.Buffer).ReadFrom
+        - (*bytes.Buffer).WriteTo
+    staticcheck:
+      checks:
+        - all
+        - "-QF1001"
+        - "-QF1003"
+        - "-QF1011"
+        - "-ST1023"
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
