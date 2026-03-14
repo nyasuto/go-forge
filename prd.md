@@ -344,7 +344,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 #### Phase 3: 出力フォーマッタ（JSON・oneline・プログレスバー・カラー）
 
-- [ ] `internal/output/bar.go`（プログレスバー生成）、`internal/output/text.go`（テキストモード出力）、`internal/output/json.go`（JSONモード出力）。`--json`、`--oneline` フラグ対応。リセットまでの残り時間計算（"2h31m"形式）。`--color=auto|always|never` とisattyチェック、閾値ベース色分け（0-49%緑、50-79%黄、80-100%赤）。テスト追加・通過。テスト結果を更新。
+- [x] `internal/output/bar.go`（プログレスバー生成）、`internal/output/text.go`（テキストモード出力）、`internal/output/json.go`（JSONモード出力）。`--json`、`--oneline` フラグ対応。リセットまでの残り時間計算（"2h31m"形式）。`--color=auto|always|never` とisattyチェック、閾値ベース色分け（0-49%緑、50-79%黄、80-100%赤）。テスト追加・通過。テスト結果を更新。
 
 #### Phase 4: statusLine統合・formatテンプレート
 

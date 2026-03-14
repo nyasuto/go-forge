@@ -208,3 +208,7 @@
 ## gf-claude-quota Phase 2: ファイルキャッシュ
 - 完了日: 2026-03-14
 - 作業内容: `internal/cache/filecache.go` — FileCache構造体（Get/Set/isStale）、`~/.cache/gf-claude-quota/usage.json`にAPIレスポンスをJSON保存、TTLベース有効期限管理、キャッシュディレクトリ自動作成、アトミック書き込み（tmp+rename）、ファイルパーミッション0600。main.goにキャッシュチェック→API呼び出しのフローを統合。`--cache-ttl`（デフォルト60秒）、`--no-cache`フラグ追加。キャッシュファイルにトークンが含まれないことを検証。テスト13件追加、累計27件ALL PASS。
+
+## gf-claude-quota Phase 3: 出力フォーマッタ（JSON・oneline・プログレスバー・カラー）
+- 完了日: 2026-03-14
+- 作業内容: `internal/output/` パッケージ新設。`bar.go`（BuildBar, FormatResetTime, ColorLevel, Colorize — プログレスバー生成・リセット時間計算・カラー閾値判定・ANSI色付け）。`text.go`（FormatText — カラー対応テキストモード出力、ParseColorMode, ShouldColorize, IsTerminal — isattyチェック）。`json.go`（FormatJSON — インデント付きJSON出力 with resets_in, FormatOneline — `5h:42%(2h29m) 7d:18%` コンパクト形式）。main.goに`--json`/`--oneline`/`--color=auto|always|never`フラグ追加、排他制御（--json + --oneline → exit 2）、printUsage関数でモード別出力を統合。出力ロジックをmain.goからinternal/outputに分離。テスト23件追加、累計50件ALL PASS。

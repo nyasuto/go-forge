@@ -63,3 +63,53 @@
 - キャッシュチェック→API呼び出しのフロー統合
 
 ### テスト合計: 27件（Phase 1: 14件 + Phase 2: 13件）、全PASS
+
+---
+
+## Phase 3: 出力フォーマッタ（JSON・oneline・プログレスバー・カラー）
+
+### 実行日: 2026-03-14
+
+### テスト結果: ALL PASS
+
+### テスト内訳
+
+#### internal/output/output_test.go (19件)
+- TestBuildBar: プログレスバー生成（0%, 50%, 100%, 42%, 99.5%, 負値, 100超, width20, 1%, 5%）— 10サブテスト
+- TestFormatResetTime: リセット時刻フォーマット（時分, 日時, 分のみ, 過去, 不正形式）— 5サブテスト
+- TestColorLevel: カラー閾値判定（0%緑, 49%緑, 50%黄, 79%黄, 80%赤, 100%赤）— 6サブテスト
+- TestColorize: ANSIカラーコード付与（緑, 黄, 赤）— 3サブテスト
+- TestParseColorMode: カラーモードパース（auto, always, never, invalid, 空文字）— 5サブテスト
+- TestFormatText: テキストモード出力（ヘッダ, ラベル, 使用率, リセット時間）
+- TestFormatText_WithColor: カラー付きテキスト出力（ANSIコード存在確認）
+- TestFormatText_NoColor: カラーなしテキスト出力（ANSIコード不在確認）
+- TestFormatText_NilWindows: 全windowがnilの場合のヘッダのみ出力
+- TestFormatText_HighUtilization: 高使用率（95%）で赤色確認
+- TestFormatText_MediumUtilization: 中使用率（65%）で黄色確認
+- TestFormatJSON: JSON出力（全フィールド, resets_in, 構造検証）
+- TestFormatJSON_NilWindows: nilフィールドのomitempty確認
+- TestFormatJSON_ValidJSON: インデント付きJSON検証
+- TestFormatOneline: ワンライナー出力（5h:42%(2h29m) 7d:18%形式）
+- TestFormatOneline_WithOpus: Opus使用率>0の場合の出力確認
+- TestFormatOneline_NilWindows: 全windowがnilの場合の空出力
+- TestFormatOneline_NoResetTime: リセット時刻なしの場合
+
+#### main_test.go (4件)
+- TestRun_Version: --version フラグ
+- TestRun_InvalidFlag: 不正フラグでexit 2
+- TestRun_InvalidColorMode: 不正カラーモードでexit 2
+- TestRun_MutuallyExclusiveFlags: --json + --oneline の排他制御でexit 2
+
+#### 新規ファイル
+- `internal/output/bar.go` — BuildBar, FormatResetTime, ColorLevel, Colorize関数
+- `internal/output/text.go` — FormatText（カラー対応テキスト出力）, ParseColorMode, ShouldColorize
+- `internal/output/json.go` — FormatJSON（インデント付きJSON）, FormatOneline（コンパクト1行形式）
+
+#### main.go 変更
+- `--json` フラグ追加（JSON形式出力）
+- `--oneline` フラグ追加（ワンライナー出力）
+- `--color` フラグ追加（auto|always|never）
+- 出力ロジックを internal/output パッケージに分離
+- printUsage関数でモード別出力を統合
+
+### テスト合計: 50件（Phase 1: 14件→4件に整理 + Phase 2: 13件 + Phase 3: 23件 + api: 6件 + credentials: 5件）、全PASS
