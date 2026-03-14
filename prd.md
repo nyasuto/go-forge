@@ -336,7 +336,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 #### Phase 1: MVP — 型定義・APIクライアント・Keychainトークン取得・基本CLI
 
-- [ ] `cmd/gf-claude-quota/` 作成（go.mod初期化、go.workに追加）。`internal/api/types.go`（UsageResponse, UsageWindow構造体）、`internal/api/client.go`（net/httpでGET、JSONパース、401/429/5xxエラーハンドリング）、`internal/credentials/keychain.go`（macOS securityコマンドでトークン取得、JSONパースしてaccessToken抽出）、`main.go`（トークン取得→API呼び出し→テキスト形式で使用率表示の基本パイプライン）。モックHTTPサーバーでAPIクライアントのテスト、Keychainパースロジックのテスト作成・通過。テスト結果を `docs/test-results/gf-claude-quota.md` に記録。
+- [x] `cmd/gf-claude-quota/` 作成（go.mod初期化、go.workに追加）。`internal/api/types.go`（UsageResponse, UsageWindow構造体）、`internal/api/client.go`（net/httpでGET、JSONパース、401/429/5xxエラーハンドリング）、`internal/credentials/keychain.go`（macOS securityコマンドでトークン取得、JSONパースしてaccessToken抽出）、`main.go`（トークン取得→API呼び出し→テキスト形式で使用率表示の基本パイプライン）。モックHTTPサーバーでAPIクライアントのテスト、Keychainパースロジックのテスト作成・通過。テスト結果を `docs/test-results/gf-claude-quota.md` に記録。
 
 #### Phase 2: ファイルキャッシュ
 

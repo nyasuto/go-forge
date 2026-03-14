@@ -17,4 +17,5 @@ use (
 	./cmd/gf-tree
 	./cmd/gf-jq
 	./cmd/gf-hexdump
+	./cmd/gf-claude-quota
 )

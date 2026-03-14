@@ -200,3 +200,7 @@
 ## gf-hexdump Tier 3: カラー出力（NULL, 印字可能, 制御文字で色分け）
 - 完了日: 2026-03-14
 - 作業内容: `--color`フラグ追加（auto/always/never）。`byteColor`関数でバイト値に応じた色分け（NULL→dim、印字可能0x20-0x7e→緑、制御文字0x01-0x1f,0x7f→赤、高バイト0x80-0xff→青）。hexバイト部分とASCII部分の両方をカラー化。autoモードは`os.ModeCharDevice`でターミナル検出。不正なカラーモードはexit 2。単体テスト22件追加（byteColor 11件+formatLineColor 5件+colorNoColor 1件+runColorFlag 4件+既存1件）、累計62件ALL PASS。
+
+## gf-claude-quota Phase 1: MVP — 型定義・APIクライアント・Keychainトークン取得・基本CLI
+- 完了日: 2026-03-14
+- 作業内容: `cmd/gf-claude-quota/` 作成（go.mod初期化、go.workに追加）。`internal/api/types.go`（UsageResponse, UsageWindow構造体）。`internal/api/client.go`（net/httpでGET、JSONパース、Authorization/anthropic-betaヘッダー設定、401/429/5xxエラーハンドリング、SetEndpointでテスト用エンドポイント差し替え）。`internal/credentials/keychain.go`（macOS `security find-generic-password`コマンドでKeychain読み取り、JSONパースしてaccessToken抽出、CommandRunnerインターフェースでテスタビリティ確保）。`main.go`（トークン取得→API呼び出し→テキスト形式でプログレスバー付き使用率表示、buildBar/formatResetTime/printWindow関数）。モックHTTPサーバーでAPIクライアントのテスト（正常系・エラー系・不正JSON・全null・高使用率）、Keychainパースロジックのテスト（正常パース・コマンド失敗・不正JSON・空白トリミング）、main関数テスト（--version・不正フラグ・buildBar・formatResetTime）。テスト14件（サブテスト30件以上）、全PASS。
