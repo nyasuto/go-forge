@@ -212,3 +212,7 @@
 ## gf-claude-quota Phase 3: 出力フォーマッタ（JSON・oneline・プログレスバー・カラー）
 - 完了日: 2026-03-14
 - 作業内容: `internal/output/` パッケージ新設。`bar.go`（BuildBar, FormatResetTime, ColorLevel, Colorize — プログレスバー生成・リセット時間計算・カラー閾値判定・ANSI色付け）。`text.go`（FormatText — カラー対応テキストモード出力、ParseColorMode, ShouldColorize, IsTerminal — isattyチェック）。`json.go`（FormatJSON — インデント付きJSON出力 with resets_in, FormatOneline — `5h:42%(2h29m) 7d:18%` コンパクト形式）。main.goに`--json`/`--oneline`/`--color=auto|always|never`フラグ追加、排他制御（--json + --oneline → exit 2）、printUsage関数でモード別出力を統合。出力ロジックをmain.goからinternal/outputに分離。テスト23件追加、累計50件ALL PASS。
+
+## gf-claude-quota Phase 4: statusLine統合・formatテンプレート
+- 完了日: 2026-03-14
+- 作業内容: `internal/output/statusline.go` 新規作成。`FormatStatusLine`関数でstdinからClaude CodeのstatusLine JSON（model, context_window, context_used, cost）を読み取り、quota情報と合成して`⚡5h:42%(2h29m) 📅7d:18% | claude-sonnet | ctx:25% | $1.23`形式の1行出力。stdin無し/空/不正JSONの場合はquotaのみ表示にフォールバック。`FormatTemplate`関数で`--format`テンプレートエンジン実装（`{5h}`, `{5h_bar}`, `{5h_reset}`, `{7d}`, `{7d_bar}`, `{7d_reset}`, `{opus}`, `{model}`, `{ctx_pct}`, `{cost}`の変数置換）。main.goに`--statusline`/`--format`フラグ追加、stdinパラメータ追加、排他制御を4モード対応に拡張。テスト23件追加、累計73件ALL PASS。

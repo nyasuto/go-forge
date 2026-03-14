@@ -113,3 +113,46 @@
 - printUsage関数でモード別出力を統合
 
 ### テスト合計: 50件（Phase 1: 14件→4件に整理 + Phase 2: 13件 + Phase 3: 23件 + api: 6件 + credentials: 5件）、全PASS
+
+---
+
+## Phase 4: statusLine統合・formatテンプレート
+
+### 実行日: 2026-03-14
+
+### テスト結果: ALL PASS
+
+### テスト内訳
+
+#### internal/output/output_test.go (23件追加)
+- TestFormatStatusLine_WithStdinData: stdinからJSON読み取り、quota+model+ctx+cost合成出力
+- TestFormatStatusLine_NoStdinData: stdin無しでquotaのみ表示にフォールバック
+- TestFormatStatusLine_EmptyStdin: 空stdin対応
+- TestFormatStatusLine_InvalidStdinJSON: 不正JSONでもquota出力継続
+- TestFormatStatusLine_NilWindows: quotaなしでstdinデータのみ表示
+- TestFormatStatusLine_WithOpus: Opus使用率>0の場合の出力確認
+- TestFormatStatusLine_ZeroCostNotShown: cost=0の場合は$0を表示しない
+- TestFormatTemplate_BasicVars: 基本変数置換（{5h}, {7d}）
+- TestFormatTemplate_WithStdinVars: stdin変数（{model}, {ctx_pct}, {cost}）
+- TestFormatTemplate_ResetTimeVar: リセット時刻変数（{5h_reset}）
+- TestFormatTemplate_BarVar: プログレスバー変数（{5h_bar}）
+- TestFormatTemplate_OpusVar: Opus変数（{opus}）
+- TestFormatTemplate_NilWindows: 全windowがnilの場合N/A表示
+- TestFormatTemplate_NoStdinVars: stdin無しで空文字変数
+- TestBuildTemplateVars: テンプレート変数構築の全項目検証
+- TestBuildTemplateVars_NilInput: nil入力時のデフォルト値検証
+- TestStatusLineInput_Parsing: JSON入力パース（full, partial, empty）— 3サブテスト
+
+#### main_test.go (5件に拡張)
+- TestRun_MutuallyExclusiveFlags: 排他制御を5パターンに拡張（json+oneline, json+statusline, oneline+statusline, json+format, statusline+format）
+
+#### 新規ファイル
+- `internal/output/statusline.go` — FormatStatusLine（statusLine合成出力）, FormatTemplate（テンプレートエンジン）, StatusLineInput構造体, buildQuotaParts, buildTemplateVars
+
+#### main.go 変更
+- `--statusline` フラグ追加（statusLine形式出力）
+- `--format` フラグ追加（カスタムテンプレート出力）
+- stdin読み取り対応（`io.Reader`パラメータ追加）
+- 排他制御を4モード対応に拡張
+
+### テスト合計: 73件（main: 9件 + api: 6件 + cache: 13件 + credentials: 5件 + output: 40件）、全PASS

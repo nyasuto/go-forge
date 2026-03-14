@@ -348,7 +348,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 #### Phase 4: statusLine統合・formatテンプレート
 
-- [ ] `internal/output/statusline.go` — stdinからClaude CodeのstatusLine JSONを読み取り、model/context_window/costを抽出、quota情報と合成して1行出力。stdin無し時はquotaのみ表示にフォールバック。`--format` テンプレートエンジン（`{5h}`, `{7d}`, `{model}`, `{ctx_pct}`, `{cost}` 等の変数置換）。テスト追加・通過。テスト結果を更新。
+- [x] `internal/output/statusline.go` — stdinからClaude CodeのstatusLine JSONを読み取り、model/context_window/costを抽出、quota情報と合成して1行出力。stdin無し時はquotaのみ表示にフォールバック。`--format` テンプレートエンジン（`{5h}`, `{7d}`, `{model}`, `{ctx_pct}`, `{cost}` 等の変数置換）。テスト追加・通過。テスト結果を更新。
 
 #### Phase 5: ウォッチモード・閾値通知
 

@@ -515,3 +515,316 @@ func TestFormatOneline_NoResetTime(t *testing.T) {
 		t.Errorf("output = %q, want '5h:42%%'", out)
 	}
 }
+
+// --- FormatStatusLine tests ---
+
+func TestFormatStatusLine_WithStdinData(t *testing.T) {
+	origNow := NowFunc
+	defer func() { NowFunc = origNow }()
+	NowFunc = func() time.Time {
+		return time.Date(2025, 11, 4, 2, 30, 0, 0, time.UTC)
+	}
+
+	stdinData := []byte(`{"model":"claude-sonnet-4-20250514","context_window":200000,"context_used":50000,"cost":1.23}`)
+
+	var buf bytes.Buffer
+	FormatStatusLine(&buf, sampleUsage(), stdinData)
+	out := strings.TrimSpace(buf.String())
+
+	if !strings.Contains(out, "⚡5h:42%(2h29m)") {
+		t.Errorf("output = %q, want to contain '⚡5h:42%%(2h29m)'", out)
+	}
+	if !strings.Contains(out, "📅7d:18%") {
+		t.Errorf("output = %q, want to contain '📅7d:18%%'", out)
+	}
+	if !strings.Contains(out, "claude-sonnet-4-20250514") {
+		t.Errorf("output = %q, want to contain model name", out)
+	}
+	if !strings.Contains(out, "ctx:25%") {
+		t.Errorf("output = %q, want to contain 'ctx:25%%'", out)
+	}
+	if !strings.Contains(out, "$1.23") {
+		t.Errorf("output = %q, want to contain '$1.23'", out)
+	}
+	// Sections should be pipe-separated
+	if !strings.Contains(out, " | ") {
+		t.Errorf("output = %q, want pipe separators", out)
+	}
+}
+
+func TestFormatStatusLine_NoStdinData(t *testing.T) {
+	origNow := NowFunc
+	defer func() { NowFunc = origNow }()
+	NowFunc = func() time.Time {
+		return time.Date(2025, 11, 4, 2, 30, 0, 0, time.UTC)
+	}
+
+	var buf bytes.Buffer
+	FormatStatusLine(&buf, sampleUsage(), nil)
+	out := strings.TrimSpace(buf.String())
+
+	// Should contain quota info but no model/ctx/cost
+	if !strings.Contains(out, "⚡5h:42%") {
+		t.Errorf("output = %q, want to contain '⚡5h:42%%'", out)
+	}
+	if strings.Contains(out, " | ") {
+		t.Errorf("output = %q, should not contain pipe separators without stdin data", out)
+	}
+}
+
+func TestFormatStatusLine_EmptyStdin(t *testing.T) {
+	var buf bytes.Buffer
+	FormatStatusLine(&buf, sampleUsage(), []byte(""))
+	out := strings.TrimSpace(buf.String())
+
+	// Should still output quota info
+	if !strings.Contains(out, "⚡5h:42%") {
+		t.Errorf("output = %q, want to contain quota info", out)
+	}
+}
+
+func TestFormatStatusLine_InvalidStdinJSON(t *testing.T) {
+	var buf bytes.Buffer
+	FormatStatusLine(&buf, sampleUsage(), []byte("not json"))
+	out := strings.TrimSpace(buf.String())
+
+	// Should still output quota info, ignoring invalid JSON
+	if !strings.Contains(out, "⚡5h:42%") {
+		t.Errorf("output = %q, want to contain quota info despite invalid stdin", out)
+	}
+}
+
+func TestFormatStatusLine_NilWindows(t *testing.T) {
+	stdinData := []byte(`{"model":"opus","context_window":100000,"context_used":25000,"cost":0.5}`)
+
+	var buf bytes.Buffer
+	FormatStatusLine(&buf, &api.UsageResponse{}, stdinData)
+	out := strings.TrimSpace(buf.String())
+
+	// Should show model info even without quota
+	if !strings.Contains(out, "opus") {
+		t.Errorf("output = %q, want to contain model name", out)
+	}
+	if !strings.Contains(out, "ctx:25%") {
+		t.Errorf("output = %q, want to contain ctx percentage", out)
+	}
+}
+
+func TestFormatStatusLine_WithOpus(t *testing.T) {
+	origNow := NowFunc
+	defer func() { NowFunc = origNow }()
+	NowFunc = func() time.Time {
+		return time.Date(2025, 11, 4, 2, 30, 0, 0, time.UTC)
+	}
+
+	resetAt := "2025-11-04T04:59:59+00:00"
+	usage := &api.UsageResponse{
+		FiveHour: &api.UsageWindow{Utilization: 42.0, ResetsAt: &resetAt},
+		SevenDayOpus: &api.UsageWindow{Utilization: 15.0, ResetsAt: &resetAt},
+	}
+
+	var buf bytes.Buffer
+	FormatStatusLine(&buf, usage, nil)
+	out := strings.TrimSpace(buf.String())
+
+	if !strings.Contains(out, "opus:15%") {
+		t.Errorf("output = %q, want to contain 'opus:15%%'", out)
+	}
+}
+
+func TestFormatStatusLine_ZeroCostNotShown(t *testing.T) {
+	stdinData := []byte(`{"model":"sonnet","context_window":200000,"context_used":100000,"cost":0}`)
+
+	var buf bytes.Buffer
+	FormatStatusLine(&buf, sampleUsage(), stdinData)
+	out := strings.TrimSpace(buf.String())
+
+	if strings.Contains(out, "$0") {
+		t.Errorf("output = %q, should not contain $0 cost", out)
+	}
+}
+
+// --- FormatTemplate tests ---
+
+func TestFormatTemplate_BasicVars(t *testing.T) {
+	origNow := NowFunc
+	defer func() { NowFunc = origNow }()
+	NowFunc = func() time.Time {
+		return time.Date(2025, 11, 4, 2, 30, 0, 0, time.UTC)
+	}
+
+	var buf bytes.Buffer
+	FormatTemplate(&buf, sampleUsage(), nil, "5h:{5h} 7d:{7d}")
+	out := strings.TrimSpace(buf.String())
+
+	if out != "5h:42% 7d:18%" {
+		t.Errorf("output = %q, want '5h:42%% 7d:18%%'", out)
+	}
+}
+
+func TestFormatTemplate_WithStdinVars(t *testing.T) {
+	stdinData := []byte(`{"model":"claude-opus","context_window":200000,"context_used":150000,"cost":2.50}`)
+
+	var buf bytes.Buffer
+	FormatTemplate(&buf, sampleUsage(), stdinData, "{5h} | {model} | ctx:{ctx_pct}% | ${cost}")
+	out := strings.TrimSpace(buf.String())
+
+	if !strings.Contains(out, "42%") {
+		t.Errorf("output = %q, want to contain '42%%'", out)
+	}
+	if !strings.Contains(out, "claude-opus") {
+		t.Errorf("output = %q, want to contain 'claude-opus'", out)
+	}
+	if !strings.Contains(out, "ctx:75%") {
+		t.Errorf("output = %q, want to contain 'ctx:75%%'", out)
+	}
+	if !strings.Contains(out, "$2.50") {
+		t.Errorf("output = %q, want to contain '$2.50'", out)
+	}
+}
+
+func TestFormatTemplate_ResetTimeVar(t *testing.T) {
+	origNow := NowFunc
+	defer func() { NowFunc = origNow }()
+	NowFunc = func() time.Time {
+		return time.Date(2025, 11, 4, 2, 30, 0, 0, time.UTC)
+	}
+
+	var buf bytes.Buffer
+	FormatTemplate(&buf, sampleUsage(), nil, "{5h}({5h_reset})")
+	out := strings.TrimSpace(buf.String())
+
+	if out != "42%(2h29m)" {
+		t.Errorf("output = %q, want '42%%(2h29m)'", out)
+	}
+}
+
+func TestFormatTemplate_BarVar(t *testing.T) {
+	var buf bytes.Buffer
+	FormatTemplate(&buf, sampleUsage(), nil, "[{5h_bar}]")
+	out := strings.TrimSpace(buf.String())
+
+	expected := "[" + BuildBar(42.0, 10) + "]"
+	if out != expected {
+		t.Errorf("output = %q, want %q", out, expected)
+	}
+}
+
+func TestFormatTemplate_OpusVar(t *testing.T) {
+	var buf bytes.Buffer
+	FormatTemplate(&buf, sampleUsage(), nil, "opus:{opus}")
+	out := strings.TrimSpace(buf.String())
+
+	if out != "opus:0%" {
+		t.Errorf("output = %q, want 'opus:0%%'", out)
+	}
+}
+
+func TestFormatTemplate_NilWindows(t *testing.T) {
+	var buf bytes.Buffer
+	FormatTemplate(&buf, &api.UsageResponse{}, nil, "{5h} {7d}")
+	out := strings.TrimSpace(buf.String())
+
+	if out != "N/A N/A" {
+		t.Errorf("output = %q, want 'N/A N/A'", out)
+	}
+}
+
+func TestFormatTemplate_NoStdinVars(t *testing.T) {
+	var buf bytes.Buffer
+	FormatTemplate(&buf, sampleUsage(), nil, "m:{model} ctx:{ctx_pct}")
+	out := strings.TrimSpace(buf.String())
+
+	// model and ctx_pct should be empty strings
+	if out != "m: ctx:" {
+		t.Errorf("output = %q, want 'm: ctx:'", out)
+	}
+}
+
+// --- buildTemplateVars tests ---
+
+func TestBuildTemplateVars(t *testing.T) {
+	origNow := NowFunc
+	defer func() { NowFunc = origNow }()
+	NowFunc = func() time.Time {
+		return time.Date(2025, 11, 4, 2, 30, 0, 0, time.UTC)
+	}
+
+	input := &StatusLineInput{
+		Model:         "sonnet",
+		ContextWindow: 100000,
+		ContextUsed:   50000,
+		Cost:          1.5,
+	}
+
+	vars := buildTemplateVars(sampleUsage(), input)
+
+	if vars["5h"] != "42%" {
+		t.Errorf("5h = %q, want '42%%'", vars["5h"])
+	}
+	if vars["7d"] != "18%" {
+		t.Errorf("7d = %q, want '18%%'", vars["7d"])
+	}
+	if vars["5h_reset"] != "2h29m" {
+		t.Errorf("5h_reset = %q, want '2h29m'", vars["5h_reset"])
+	}
+	if vars["model"] != "sonnet" {
+		t.Errorf("model = %q, want 'sonnet'", vars["model"])
+	}
+	if vars["ctx_pct"] != "50" {
+		t.Errorf("ctx_pct = %q, want '50'", vars["ctx_pct"])
+	}
+	if vars["cost"] != "1.50" {
+		t.Errorf("cost = %q, want '1.50'", vars["cost"])
+	}
+}
+
+func TestBuildTemplateVars_NilInput(t *testing.T) {
+	vars := buildTemplateVars(sampleUsage(), nil)
+
+	if vars["model"] != "" {
+		t.Errorf("model = %q, want empty", vars["model"])
+	}
+	if vars["ctx_pct"] != "" {
+		t.Errorf("ctx_pct = %q, want empty", vars["ctx_pct"])
+	}
+}
+
+// --- StatusLineInput JSON parsing tests ---
+
+func TestStatusLineInput_Parsing(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  StatusLineInput
+	}{
+		{
+			name:  "full input",
+			input: `{"model":"claude-sonnet-4-20250514","context_window":200000,"context_used":100000,"cost":1.5}`,
+			want:  StatusLineInput{Model: "claude-sonnet-4-20250514", ContextWindow: 200000, ContextUsed: 100000, Cost: 1.5},
+		},
+		{
+			name:  "partial input",
+			input: `{"model":"opus"}`,
+			want:  StatusLineInput{Model: "opus"},
+		},
+		{
+			name:  "empty object",
+			input: `{}`,
+			want:  StatusLineInput{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got StatusLineInput
+			err := json.Unmarshal([]byte(tt.input), &got)
+			if err != nil {
+				t.Fatalf("unmarshal error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}

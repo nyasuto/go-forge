@@ -21,7 +21,7 @@ func TestRun_Version(t *testing.T) {
 	defer os.Remove(stderr.Name())
 	defer stderr.Close()
 
-	code := run([]string{"--version"}, stdout, stderr)
+	code := run([]string{"--version"}, stdout, stderr, strings.NewReader(""))
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
 	}
@@ -51,7 +51,7 @@ func TestRun_InvalidFlag(t *testing.T) {
 	defer os.Remove(stderr.Name())
 	defer stderr.Close()
 
-	code := run([]string{"--invalid-flag"}, stdout, stderr)
+	code := run([]string{"--invalid-flag"}, stdout, stderr, strings.NewReader(""))
 	if code != 2 {
 		t.Errorf("exit code = %d, want 2", code)
 	}
@@ -72,7 +72,7 @@ func TestRun_InvalidColorMode(t *testing.T) {
 	defer os.Remove(stderr.Name())
 	defer stderr.Close()
 
-	code := run([]string{"--color=invalid"}, stdout, stderr)
+	code := run([]string{"--color=invalid"}, stdout, stderr, strings.NewReader(""))
 	if code != 2 {
 		t.Errorf("exit code = %d, want 2", code)
 	}
@@ -87,30 +87,45 @@ func TestRun_InvalidColorMode(t *testing.T) {
 }
 
 func TestRun_MutuallyExclusiveFlags(t *testing.T) {
-	stdout, err := os.CreateTemp("", "stdout-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(stdout.Name())
-	defer stdout.Close()
-
-	stderr, err := os.CreateTemp("", "stderr-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(stderr.Name())
-	defer stderr.Close()
-
-	code := run([]string{"--json", "--oneline"}, stdout, stderr)
-	if code != 2 {
-		t.Errorf("exit code = %d, want 2", code)
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"json+oneline", []string{"--json", "--oneline"}},
+		{"json+statusline", []string{"--json", "--statusline"}},
+		{"oneline+statusline", []string{"--oneline", "--statusline"}},
+		{"json+format", []string{"--json", "--format={5h}"}},
+		{"statusline+format", []string{"--statusline", "--format={5h}"}},
 	}
 
-	stderr.Seek(0, 0)
-	buf := make([]byte, 1024)
-	n, _ := stderr.Read(buf)
-	errOutput := string(buf[:n])
-	if !strings.Contains(errOutput, "mutually exclusive") {
-		t.Errorf("stderr = %q, want to contain 'mutually exclusive'", errOutput)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, err := os.CreateTemp("", "stdout-*")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(stdout.Name())
+			defer stdout.Close()
+
+			stderr, err := os.CreateTemp("", "stderr-*")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(stderr.Name())
+			defer stderr.Close()
+
+			code := run(tt.args, stdout, stderr, strings.NewReader(""))
+			if code != 2 {
+				t.Errorf("exit code = %d, want 2", code)
+			}
+
+			stderr.Seek(0, 0)
+			buf := make([]byte, 1024)
+			n, _ := stderr.Read(buf)
+			errOutput := string(buf[:n])
+			if !strings.Contains(errOutput, "mutually exclusive") {
+				t.Errorf("stderr = %q, want to contain 'mutually exclusive'", errOutput)
+			}
+		})
 	}
 }
