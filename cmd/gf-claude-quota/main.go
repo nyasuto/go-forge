@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"time"
 
 	"gf-claude-quota/internal/api"
@@ -31,6 +33,9 @@ func run(args []string, stdout, stderr *os.File, stdin io.Reader) int {
 	statuslineMode := fs.Bool("statusline", false, "output in statusLine format")
 	formatTmpl := fs.String("format", "", "custom output template")
 	colorFlag := fs.String("color", "auto", "color mode: auto|always|never")
+	watchMode := fs.Bool("watch", false, "continuous monitoring mode")
+	interval := fs.Int("interval", 60, "watch interval in seconds")
+	notifyAt := fs.Float64("notify-at", -1, "notify when usage reaches this percentage (0-100)")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -45,6 +50,18 @@ func run(args []string, stdout, stderr *os.File, stdin io.Reader) int {
 	colorMode, err := output.ParseColorMode(*colorFlag)
 	if err != nil {
 		fmt.Fprintf(stderr, "gf-claude-quota: %v\n", err)
+		return 2
+	}
+
+	// Validate interval
+	if *interval <= 0 {
+		fmt.Fprintln(stderr, "gf-claude-quota: --interval must be positive")
+		return 2
+	}
+
+	// Validate notify-at
+	if *notifyAt != -1 && (*notifyAt < 0 || *notifyAt > 100) {
+		fmt.Fprintln(stderr, "gf-claude-quota: --notify-at must be between 0 and 100")
 		return 2
 	}
 
@@ -73,50 +90,154 @@ func run(args []string, stdout, stderr *os.File, stdin io.Reader) int {
 		stdinData, _ = io.ReadAll(stdin)
 	}
 
+	opts := &runOptions{
+		jsonMode:       *jsonMode,
+		onelineMode:    *onelineMode,
+		statuslineMode: *statuslineMode,
+		formatTmpl:     *formatTmpl,
+		stdinData:      stdinData,
+		colorMode:      colorMode,
+		noCache:        *noCache,
+		cacheTTL:       time.Duration(*cacheTTL) * time.Second,
+	}
+
+	if *watchMode {
+		return runWatch(stdout, stderr, opts, *interval, *notifyAt)
+	}
+
+	return runOnce(stdout, stderr, opts)
+}
+
+type runOptions struct {
+	jsonMode       bool
+	onelineMode    bool
+	statuslineMode bool
+	formatTmpl     string
+	stdinData      []byte
+	colorMode      output.ColorMode
+	noCache        bool
+	cacheTTL       time.Duration
+}
+
+func fetchUsage(stderr *os.File, opts *runOptions) (*api.UsageResponse, error) {
 	// Try cache first
-	var fc *cache.FileCache
-	if !*noCache {
-		fc = cache.NewFileCache("", time.Duration(*cacheTTL)*time.Second)
+	if !opts.noCache {
+		fc := cache.NewFileCache("", opts.cacheTTL)
 		if usage, err := fc.Get(); err == nil && usage != nil {
-			printUsage(stdout, usage, *jsonMode, *onelineMode, *statuslineMode, *formatTmpl, stdinData, colorMode)
-			return 0
+			return usage, nil
 		}
 	}
 
 	token, err := credentials.GetTokenFromKeychain(nil)
 	if err != nil {
-		fmt.Fprintf(stderr, "gf-claude-quota: %v\n", err)
-		return 1
+		return nil, err
 	}
 
 	client := api.NewClient(nil)
 	usage, err := client.FetchUsage(token)
 	if err != nil {
+		return nil, err
+	}
+
+	// Store in cache (best-effort)
+	if !opts.noCache {
+		fc := cache.NewFileCache("", opts.cacheTTL)
+		_ = fc.Set(usage)
+	}
+
+	return usage, nil
+}
+
+func runOnce(stdout, stderr *os.File, opts *runOptions) int {
+	usage, err := fetchUsage(stderr, opts)
+	if err != nil {
 		fmt.Fprintf(stderr, "gf-claude-quota: %v\n", err)
 		return 1
 	}
 
-	// Store in cache (best-effort)
-	if fc != nil {
-		_ = fc.Set(usage)
-	}
-
-	printUsage(stdout, usage, *jsonMode, *onelineMode, *statuslineMode, *formatTmpl, stdinData, colorMode)
+	printUsage(stdout, usage, opts)
 	return 0
 }
 
-func printUsage(out *os.File, usage *api.UsageResponse, jsonMode, onelineMode, statuslineMode bool, formatTmpl string, stdinData []byte, colorMode output.ColorMode) {
+// sleepFunc is replaceable for testing.
+var sleepFunc = func(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
+func runWatch(stdout, stderr *os.File, opts *runOptions, intervalSec int, notifyAt float64) int {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	var notifier *output.Notifier
+	if notifyAt >= 0 {
+		notifier = output.NewNotifier(notifyAt)
+	}
+
+	dur := time.Duration(intervalSec) * time.Second
+	first := true
+
+	for {
+		if !first {
+			if err := sleepFunc(ctx, dur); err != nil {
+				return 0 // interrupted
+			}
+		}
+		first = false
+
+		usage, err := fetchUsage(stderr, &runOptions{
+			noCache:  true, // always fetch fresh in watch mode
+			cacheTTL: opts.cacheTTL,
+		})
+		if err != nil {
+			fmt.Fprintf(stderr, "gf-claude-quota: %v\n", err)
+			// Continue watching on error
+			continue
+		}
+
+		// Clear terminal
+		fmt.Fprint(stdout, output.ClearTerminalSeq())
+
+		printUsage(stdout, usage, opts)
+
+		// Check notification thresholds
+		if notifier != nil {
+			if usage.FiveHour != nil {
+				notifier.Check("5h Session", usage.FiveHour.Utilization)
+			}
+			if usage.SevenDay != nil {
+				notifier.Check("7d Weekly", usage.SevenDay.Utilization)
+			}
+			if usage.SevenDayOpus != nil {
+				notifier.Check("7d Opus", usage.SevenDayOpus.Utilization)
+			}
+		}
+
+		// Check if context cancelled
+		select {
+		case <-ctx.Done():
+			return 0
+		default:
+		}
+	}
+}
+
+func printUsage(out *os.File, usage *api.UsageResponse, opts *runOptions) {
 	switch {
-	case jsonMode:
+	case opts.jsonMode:
 		_ = output.FormatJSON(out, usage)
-	case onelineMode:
+	case opts.onelineMode:
 		output.FormatOneline(out, usage)
-	case statuslineMode:
-		output.FormatStatusLine(out, usage, stdinData)
-	case formatTmpl != "":
-		output.FormatTemplate(out, usage, stdinData, formatTmpl)
+	case opts.statuslineMode:
+		output.FormatStatusLine(out, usage, opts.stdinData)
+	case opts.formatTmpl != "":
+		output.FormatTemplate(out, usage, opts.stdinData, opts.formatTmpl)
 	default:
-		useColor := output.ShouldColorize(colorMode, out)
+		useColor := output.ShouldColorize(opts.colorMode, out)
 		output.FormatText(out, usage, useColor)
 	}
 }

@@ -792,6 +792,150 @@ func TestBuildTemplateVars_NilInput(t *testing.T) {
 
 // --- StatusLineInput JSON parsing tests ---
 
+// --- Notifier tests ---
+
+func TestNotifier_BelowThreshold(t *testing.T) {
+	origSend := sendNotificationFunc
+	defer func() { sendNotificationFunc = origSend }()
+
+	called := false
+	sendNotificationFunc = func(name string, util float64) {
+		called = true
+	}
+
+	n := NewNotifier(80)
+	n.Check("5h Session", 42.0)
+
+	if called {
+		t.Error("notification should not fire below threshold")
+	}
+}
+
+func TestNotifier_AboveThreshold(t *testing.T) {
+	origSend := sendNotificationFunc
+	defer func() { sendNotificationFunc = origSend }()
+
+	var gotName string
+	var gotUtil float64
+	sendNotificationFunc = func(name string, util float64) {
+		gotName = name
+		gotUtil = util
+	}
+
+	n := NewNotifier(80)
+	n.Check("5h Session", 85.0)
+
+	if gotName != "5h Session" {
+		t.Errorf("notification window name = %q, want '5h Session'", gotName)
+	}
+	if gotUtil != 85.0 {
+		t.Errorf("notification utilization = %v, want 85.0", gotUtil)
+	}
+}
+
+func TestNotifier_Deduplication(t *testing.T) {
+	origSend := sendNotificationFunc
+	defer func() { sendNotificationFunc = origSend }()
+
+	callCount := 0
+	sendNotificationFunc = func(name string, util float64) {
+		callCount++
+	}
+
+	n := NewNotifier(80)
+	n.Check("5h Session", 85.0)
+	n.Check("5h Session", 90.0)
+	n.Check("5h Session", 95.0)
+
+	if callCount != 1 {
+		t.Errorf("notification count = %d, want 1 (should deduplicate)", callCount)
+	}
+}
+
+func TestNotifier_ResetAfterDrop(t *testing.T) {
+	origSend := sendNotificationFunc
+	defer func() { sendNotificationFunc = origSend }()
+
+	callCount := 0
+	sendNotificationFunc = func(name string, util float64) {
+		callCount++
+	}
+
+	n := NewNotifier(80)
+	n.Check("5h Session", 85.0) // fires
+	n.Check("5h Session", 50.0) // drops below, resets
+	n.Check("5h Session", 90.0) // fires again
+
+	if callCount != 2 {
+		t.Errorf("notification count = %d, want 2 (should fire again after drop)", callCount)
+	}
+}
+
+func TestNotifier_MultipleWindows(t *testing.T) {
+	origSend := sendNotificationFunc
+	defer func() { sendNotificationFunc = origSend }()
+
+	windows := []string{}
+	sendNotificationFunc = func(name string, util float64) {
+		windows = append(windows, name)
+	}
+
+	n := NewNotifier(50)
+	n.Check("5h Session", 60.0)
+	n.Check("7d Weekly", 55.0)
+	n.Check("7d Opus", 30.0) // below threshold
+
+	if len(windows) != 2 {
+		t.Errorf("notification count = %d, want 2", len(windows))
+	}
+	if windows[0] != "5h Session" || windows[1] != "7d Weekly" {
+		t.Errorf("notifications = %v, want [5h Session, 7d Weekly]", windows)
+	}
+}
+
+func TestNotifier_ExactThreshold(t *testing.T) {
+	origSend := sendNotificationFunc
+	defer func() { sendNotificationFunc = origSend }()
+
+	called := false
+	sendNotificationFunc = func(name string, util float64) {
+		called = true
+	}
+
+	n := NewNotifier(80)
+	n.Check("5h Session", 80.0)
+
+	if !called {
+		t.Error("notification should fire at exact threshold")
+	}
+}
+
+func TestNotifier_ZeroThreshold(t *testing.T) {
+	origSend := sendNotificationFunc
+	defer func() { sendNotificationFunc = origSend }()
+
+	called := false
+	sendNotificationFunc = func(name string, util float64) {
+		called = true
+	}
+
+	n := NewNotifier(0)
+	n.Check("5h Session", 0.0)
+
+	if !called {
+		t.Error("notification should fire at 0% with threshold 0")
+	}
+}
+
+// --- ClearTerminalSeq tests ---
+
+func TestClearTerminalSeq(t *testing.T) {
+	seq := ClearTerminalSeq()
+	if seq != "\033[2J\033[H" {
+		t.Errorf("ClearTerminalSeq() = %q, want ANSI clear+home", seq)
+	}
+}
+
 func TestStatusLineInput_Parsing(t *testing.T) {
 	tests := []struct {
 		name  string

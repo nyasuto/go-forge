@@ -156,3 +156,45 @@
 - 排他制御を4モード対応に拡張
 
 ### テスト合計: 73件（main: 9件 + api: 6件 + cache: 13件 + credentials: 5件 + output: 40件）、全PASS
+
+---
+
+## Phase 5: ウォッチモード・閾値通知
+
+### 実行日: 2026-03-14
+
+### テスト結果: ALL PASS
+
+### テスト内訳
+
+#### internal/output/output_test.go (8件追加)
+- TestNotifier_BelowThreshold: 閾値未満で通知が発火しないことを確認
+- TestNotifier_AboveThreshold: 閾値超過で通知が発火し、ウィンドウ名と使用率が正しく渡されることを確認
+- TestNotifier_Deduplication: 同一ウィンドウの重複通知防止（3回Checkで1回のみ発火）
+- TestNotifier_ResetAfterDrop: 閾値以下に下降後の再上昇で再発火を確認
+- TestNotifier_MultipleWindows: 異なるウィンドウの独立通知（2/3ウィンドウが発火）
+- TestNotifier_ExactThreshold: ちょうど閾値で通知発火
+- TestNotifier_ZeroThreshold: 閾値0%で0%使用率でも通知発火
+- TestClearTerminalSeq: ANSIクリアシーケンス生成確認
+
+#### main_test.go (7件追加)
+- TestRun_InvalidInterval: --interval=0 でexit 2
+- TestRun_InvalidNotifyAt: --notify-at の範囲外値検証（負値, 100超）— 2サブテスト
+- TestRun_NegativeInterval: --interval=-1 でexit 2
+- TestRunWatch_StopsOnCancel: sleepFunc差し替えによるウォッチループ制御テスト
+- TestRunWatch_NotifyAtWithThreshold: Notifier統合テスト（80%閾値で5h:85%のみ発火、7d:60%は未発火）
+- TestPrintUsage_AllModes: printUsage関数の全出力モード検証（text, json, oneline）— 3サブテスト
+
+#### 新規ファイル
+- `internal/output/watch.go` — Notifier構造体（Check/sendNotification/重複防止map）、ClearTerminalSeq、ExportSendNotificationFunc/SetSendNotificationFunc（テスト用）
+
+#### main.go 変更
+- `--watch` フラグ追加（継続監視モード）
+- `--interval` フラグ追加（デフォルト60秒、正値バリデーション）
+- `--notify-at` フラグ追加（0-100範囲バリデーション、macOS osascript通知）
+- runOptions構造体導入でオプション管理を整理
+- fetchUsage関数でキャッシュ→API呼び出しフローを分離
+- runWatch関数でsignal.NotifyContext+ポーリングループ+ターミナルクリア+通知チェック
+- sleepFunc変数でテスト時のスリープ差し替え対応
+
+### テスト合計: 88件（main: 16件 + api: 6件 + cache: 13件 + credentials: 5件 + output: 48件）、全PASS

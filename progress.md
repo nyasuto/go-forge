@@ -216,3 +216,7 @@
 ## gf-claude-quota Phase 4: statusLine統合・formatテンプレート
 - 完了日: 2026-03-14
 - 作業内容: `internal/output/statusline.go` 新規作成。`FormatStatusLine`関数でstdinからClaude CodeのstatusLine JSON（model, context_window, context_used, cost）を読み取り、quota情報と合成して`⚡5h:42%(2h29m) 📅7d:18% | claude-sonnet | ctx:25% | $1.23`形式の1行出力。stdin無し/空/不正JSONの場合はquotaのみ表示にフォールバック。`FormatTemplate`関数で`--format`テンプレートエンジン実装（`{5h}`, `{5h_bar}`, `{5h_reset}`, `{7d}`, `{7d_bar}`, `{7d_reset}`, `{opus}`, `{model}`, `{ctx_pct}`, `{cost}`の変数置換）。main.goに`--statusline`/`--format`フラグ追加、stdinパラメータ追加、排他制御を4モード対応に拡張。テスト23件追加、累計73件ALL PASS。
+
+## gf-claude-quota Phase 5: ウォッチモード・閾値通知
+- 完了日: 2026-03-14
+- 作業内容: `internal/output/watch.go` 新規作成。`Notifier`構造体で閾値ベースの通知管理（同一セッション重複通知防止、閾値以下への下降後の再発火対応）。macOS `osascript`で通知センターに送信。`ClearTerminalSeq`関数でANSIターミナルクリア。main.goに`--watch`フラグ（`signal.NotifyContext`でCtrl-C終了、ポーリングループ、ターミナルクリア＆再描画）、`--interval`フラグ（デフォルト60秒、正値バリデーション）、`--notify-at`フラグ（0-100範囲バリデーション）追加。`runOptions`構造体でオプション管理を整理、`fetchUsage`関数でキャッシュ→APIフローを分離、`sleepFunc`変数でテスト時のスリープ差し替え対応。テスト15件追加、累計88件ALL PASS。

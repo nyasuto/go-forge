@@ -352,7 +352,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 #### Phase 5: ウォッチモード・閾値通知
 
-- [ ] `--watch` モード（指定間隔でAPIポーリング、ターミナルクリア＆再描画、Ctrl-Cで終了）。`--interval` フラグ（デフォルト60秒）。`--notify-at` 閾値通知（macOS: osascriptで通知センター送信、同一セッション重複通知防止）。テスト追加・通過。テスト結果を更新。
+- [x] `--watch` モード（指定間隔でAPIポーリング、ターミナルクリア＆再描画、Ctrl-Cで終了）。`--interval` フラグ（デフォルト60秒）。`--notify-at` 閾値通知（macOS: osascriptで通知センター送信、同一セッション重複通知防止）。テスト追加・通過。テスト結果を更新。
 
 #### Phase 6: 自動セットアップ
 
