@@ -204,3 +204,7 @@
 ## gf-claude-quota Phase 1: MVP — 型定義・APIクライアント・Keychainトークン取得・基本CLI
 - 完了日: 2026-03-14
 - 作業内容: `cmd/gf-claude-quota/` 作成（go.mod初期化、go.workに追加）。`internal/api/types.go`（UsageResponse, UsageWindow構造体）。`internal/api/client.go`（net/httpでGET、JSONパース、Authorization/anthropic-betaヘッダー設定、401/429/5xxエラーハンドリング、SetEndpointでテスト用エンドポイント差し替え）。`internal/credentials/keychain.go`（macOS `security find-generic-password`コマンドでKeychain読み取り、JSONパースしてaccessToken抽出、CommandRunnerインターフェースでテスタビリティ確保）。`main.go`（トークン取得→API呼び出し→テキスト形式でプログレスバー付き使用率表示、buildBar/formatResetTime/printWindow関数）。モックHTTPサーバーでAPIクライアントのテスト（正常系・エラー系・不正JSON・全null・高使用率）、Keychainパースロジックのテスト（正常パース・コマンド失敗・不正JSON・空白トリミング）、main関数テスト（--version・不正フラグ・buildBar・formatResetTime）。テスト14件（サブテスト30件以上）、全PASS。
+
+## gf-claude-quota Phase 2: ファイルキャッシュ
+- 完了日: 2026-03-14
+- 作業内容: `internal/cache/filecache.go` — FileCache構造体（Get/Set/isStale）、`~/.cache/gf-claude-quota/usage.json`にAPIレスポンスをJSON保存、TTLベース有効期限管理、キャッシュディレクトリ自動作成、アトミック書き込み（tmp+rename）、ファイルパーミッション0600。main.goにキャッシュチェック→API呼び出しのフローを統合。`--cache-ttl`（デフォルト60秒）、`--no-cache`フラグ追加。キャッシュファイルにトークンが含まれないことを検証。テスト13件追加、累計27件ALL PASS。

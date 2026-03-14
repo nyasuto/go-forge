@@ -340,7 +340,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 #### Phase 2: ファイルキャッシュ
 
-- [ ] `internal/cache/filecache.go` — FileCache構造体（`~/.cache/gf-claude-quota/usage.json`）、Get/Set/IsStale、TTLベース有効期限管理、キャッシュディレクトリ自動作成、ファイルロック（並行アクセス安全）。main.goにキャッシュチェック→API呼び出しのフローを組み込み。`--cache-ttl`、`--no-cache` フラグ対応。テスト追加・通過。テスト結果を更新。
+- [x] `internal/cache/filecache.go` — FileCache構造体（`~/.cache/gf-claude-quota/usage.json`）、Get/Set/IsStale、TTLベース有効期限管理、キャッシュディレクトリ自動作成、ファイルロック（並行アクセス安全）。main.goにキャッシュチェック→API呼び出しのフローを組み込み。`--cache-ttl`、`--no-cache` フラグ対応。テスト追加・通過。テスト結果を更新。
 
 #### Phase 3: 出力フォーマッタ（JSON・oneline・プログレスバー・カラー）
 

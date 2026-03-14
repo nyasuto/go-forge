@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gf-claude-quota/internal/api"
+	"gf-claude-quota/internal/cache"
 	"gf-claude-quota/internal/credentials"
 )
 
@@ -23,6 +24,8 @@ func run(args []string, stdout, stderr *os.File) int {
 	fs.SetOutput(stderr)
 
 	showVersion := fs.Bool("version", false, "show version")
+	cacheTTL := fs.Int("cache-ttl", 60, "cache TTL in seconds")
+	noCache := fs.Bool("no-cache", false, "disable cache")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -31,6 +34,16 @@ func run(args []string, stdout, stderr *os.File) int {
 	if *showVersion {
 		fmt.Fprintln(stdout, "gf-claude-quota version "+version)
 		return 0
+	}
+
+	// Try cache first
+	var fc *cache.FileCache
+	if !*noCache {
+		fc = cache.NewFileCache("", time.Duration(*cacheTTL)*time.Second)
+		if usage, err := fc.Get(); err == nil && usage != nil {
+			formatUsage(stdout, usage)
+			return 0
+		}
 	}
 
 	token, err := credentials.GetTokenFromKeychain(nil)
@@ -44,6 +57,11 @@ func run(args []string, stdout, stderr *os.File) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "gf-claude-quota: %v\n", err)
 		return 1
+	}
+
+	// Store in cache (best-effort)
+	if fc != nil {
+		_ = fc.Set(usage)
 	}
 
 	formatUsage(stdout, usage)
