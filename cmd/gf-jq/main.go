@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -40,7 +41,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	filter := remaining[0]
 	files := remaining[1:]
 
-	tokens, err := parseFilter(filter)
+	stages, err := parseFilter(filter)
 	if err != nil {
 		fmt.Fprintf(stderr, "gf-jq: %v\n", err)
 		return 2
@@ -49,7 +50,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	exitCode := 0
 
 	if len(files) == 0 || (len(files) == 1 && files[0] == "-") {
-		if code := processReader(stdin, tokens, stdout, stderr); code != 0 {
+		if code := processReader(stdin, stages, stdout, stderr); code != 0 {
 			exitCode = code
 		}
 	} else {
@@ -60,7 +61,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				exitCode = 1
 				continue
 			}
-			if code := processReader(f, tokens, stdout, stderr); code != 0 {
+			if code := processReader(f, stages, stdout, stderr); code != 0 {
 				exitCode = code
 			}
 			f.Close()
@@ -74,9 +75,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 type tokenType int
 
 const (
-	tokenKey   tokenType = iota // .key
-	tokenIndex                  // .[0]
-	tokenDot                    // . (identity)
+	tokenKey      tokenType = iota // .key
+	tokenIndex                     // .[N]
+	tokenDot                       // . (identity)
+	tokenIterator                  // .[]
+	tokenFunc                      // length
 )
 
 type token struct {
@@ -85,34 +88,70 @@ type token struct {
 	index int
 }
 
-func parseFilter(filter string) ([]token, error) {
-	if filter == "." {
+// parseFilter parses a filter expression into a pipeline of stages separated by |
+func parseFilter(filter string) ([][]token, error) {
+	parts := strings.Split(filter, "|")
+	var stages [][]token
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, fmt.Errorf("invalid filter: empty pipeline stage in %q", filter)
+		}
+		tokens, err := parseFilterStage(part)
+		if err != nil {
+			return nil, err
+		}
+		stages = append(stages, tokens)
+	}
+	if len(stages) == 0 {
+		return nil, fmt.Errorf("invalid filter: %q", filter)
+	}
+	return stages, nil
+}
+
+// parseFilterStage parses a single pipeline stage
+func parseFilterStage(stage string) ([]token, error) {
+	if stage == "." {
 		return []token{{typ: tokenDot}}, nil
 	}
 
-	if !strings.HasPrefix(filter, ".") {
-		return nil, fmt.Errorf("invalid filter: %q (must start with '.')", filter)
+	// Check for bare function names
+	if stage == "length" {
+		return []token{{typ: tokenFunc, key: "length"}}, nil
+	}
+
+	if !strings.HasPrefix(stage, ".") {
+		return nil, fmt.Errorf("invalid filter: %q (must start with '.')", stage)
 	}
 
 	var tokens []token
-	s := filter[1:] // skip leading dot
+	s := stage[1:] // skip leading dot
 
 	for len(s) > 0 {
 		if s[0] == '[' {
-			// array index: [N]
-			end := strings.IndexByte(s, ']')
-			if end == -1 {
-				return nil, fmt.Errorf("invalid filter: unclosed bracket in %q", filter)
-			}
-			indexStr := s[1:end]
-			idx, err := strconv.Atoi(indexStr)
-			if err != nil {
-				return nil, fmt.Errorf("invalid array index: %q", indexStr)
-			}
-			tokens = append(tokens, token{typ: tokenIndex, index: idx})
-			s = s[end+1:]
-			if len(s) > 0 && s[0] == '.' {
-				s = s[1:]
+			if len(s) > 1 && s[1] == ']' {
+				// .[] iterator
+				tokens = append(tokens, token{typ: tokenIterator})
+				s = s[2:]
+				if len(s) > 0 && s[0] == '.' {
+					s = s[1:]
+				}
+			} else {
+				// array index: [N]
+				end := strings.IndexByte(s, ']')
+				if end == -1 {
+					return nil, fmt.Errorf("invalid filter: unclosed bracket in %q", stage)
+				}
+				indexStr := s[1:end]
+				idx, err := strconv.Atoi(indexStr)
+				if err != nil {
+					return nil, fmt.Errorf("invalid array index: %q", indexStr)
+				}
+				tokens = append(tokens, token{typ: tokenIndex, index: idx})
+				s = s[end+1:]
+				if len(s) > 0 && s[0] == '.' {
+					s = s[1:]
+				}
 			}
 		} else {
 			// key access
@@ -122,7 +161,7 @@ func parseFilter(filter string) ([]token, error) {
 			}
 			key := s[:end]
 			if key == "" {
-				return nil, fmt.Errorf("invalid filter: empty key in %q", filter)
+				return nil, fmt.Errorf("invalid filter: empty key in %q", stage)
 			}
 			tokens = append(tokens, token{typ: tokenKey, key: key})
 			s = s[end:]
@@ -133,7 +172,7 @@ func parseFilter(filter string) ([]token, error) {
 	}
 
 	if len(tokens) == 0 {
-		return nil, fmt.Errorf("invalid filter: %q", filter)
+		return nil, fmt.Errorf("invalid filter: %q", stage)
 	}
 
 	return tokens, nil
@@ -152,7 +191,7 @@ func indexOfAny(s, chars string) int {
 	return -1
 }
 
-func processReader(r io.Reader, tokens []token, stdout, stderr io.Writer) int {
+func processReader(r io.Reader, stages [][]token, stdout, stderr io.Writer) int {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		fmt.Fprintf(stderr, "gf-jq: read error: %v\n", err)
@@ -165,52 +204,123 @@ func processReader(r io.Reader, tokens []token, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	result, err := applyFilter(input, tokens)
+	results, err := applyPipeline(input, stages)
 	if err != nil {
 		fmt.Fprintf(stderr, "gf-jq: %v\n", err)
 		return 1
 	}
 
-	outputJSON(result, stdout)
+	for _, result := range results {
+		outputJSON(result, stdout)
+	}
 	return 0
 }
 
-func applyFilter(data any, tokens []token) (any, error) {
-	if len(tokens) == 1 && tokens[0].typ == tokenDot {
-		return data, nil
-	}
-
-	current := data
-	for _, tok := range tokens {
-		switch tok.typ {
-		case tokenKey:
-			obj, ok := current.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("cannot index %T with key %q", current, tok.key)
+// applyPipeline chains pipeline stages, passing each output as input to the next stage
+func applyPipeline(data any, stages [][]token) ([]any, error) {
+	results := []any{data}
+	for _, stage := range stages {
+		var next []any
+		for _, input := range results {
+			outputs, err := applyStage(input, stage)
+			if err != nil {
+				return nil, err
 			}
-			val, exists := obj[tok.key]
-			if !exists {
-				return nil, nil // null
-			}
-			current = val
-		case tokenIndex:
-			arr, ok := current.([]any)
-			if !ok {
-				return nil, fmt.Errorf("cannot index %T with number", current)
-			}
-			idx := tok.index
-			if idx < 0 {
-				idx = len(arr) + idx
-			}
-			if idx < 0 || idx >= len(arr) {
-				return nil, nil // null
-			}
-			current = arr[idx]
-		case tokenDot:
-			// identity, no-op
+			next = append(next, outputs...)
 		}
+		results = next
 	}
-	return current, nil
+	return results, nil
+}
+
+// applyStage applies a single pipeline stage, which may produce multiple outputs (from .[] iterator)
+func applyStage(data any, tokens []token) ([]any, error) {
+	results := []any{data}
+	for _, tok := range tokens {
+		var next []any
+		for _, current := range results {
+			switch tok.typ {
+			case tokenDot:
+				next = append(next, current)
+			case tokenKey:
+				obj, ok := current.(map[string]any)
+				if !ok {
+					return nil, fmt.Errorf("cannot index %T with key %q", current, tok.key)
+				}
+				val, exists := obj[tok.key]
+				if !exists {
+					next = append(next, nil)
+				} else {
+					next = append(next, val)
+				}
+			case tokenIndex:
+				arr, ok := current.([]any)
+				if !ok {
+					return nil, fmt.Errorf("cannot index %T with number", current)
+				}
+				idx := tok.index
+				if idx < 0 {
+					idx = len(arr) + idx
+				}
+				if idx < 0 || idx >= len(arr) {
+					next = append(next, nil)
+				} else {
+					next = append(next, arr[idx])
+				}
+			case tokenIterator:
+				switch v := current.(type) {
+				case []any:
+					next = append(next, v...)
+				case map[string]any:
+					keys := make([]string, 0, len(v))
+					for k := range v {
+						keys = append(keys, k)
+					}
+					sort.Strings(keys)
+					for _, k := range keys {
+						next = append(next, v[k])
+					}
+				default:
+					return nil, fmt.Errorf("cannot iterate over %T", current)
+				}
+			case tokenFunc:
+				val, err := applyFunc(tok.key, current)
+				if err != nil {
+					return nil, err
+				}
+				next = append(next, val)
+			}
+		}
+		results = next
+	}
+	return results, nil
+}
+
+// applyFunc applies a built-in function to a value
+func applyFunc(name string, data any) (any, error) {
+	switch name {
+	case "length":
+		if data == nil {
+			return float64(0), nil
+		}
+		switch v := data.(type) {
+		case []any:
+			return float64(len(v)), nil
+		case map[string]any:
+			return float64(len(v)), nil
+		case string:
+			return float64(utf8.RuneCountInString(v)), nil
+		case float64:
+			if v < 0 {
+				return -v, nil
+			}
+			return v, nil
+		default:
+			return nil, fmt.Errorf("cannot get length of %T", data)
+		}
+	default:
+		return nil, fmt.Errorf("unknown function: %s", name)
+	}
 }
 
 func outputJSON(v any, w io.Writer) {

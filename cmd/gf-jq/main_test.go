@@ -13,25 +13,43 @@ func TestParseFilter(t *testing.T) {
 		name    string
 		filter  string
 		wantErr bool
-		tokens  int
+		stages  int
+		tokens  int // tokens in first stage
 	}{
-		{name: "identity", filter: ".", tokens: 1},
-		{name: "single key", filter: ".name", tokens: 1},
-		{name: "nested key", filter: ".user.name", tokens: 2},
-		{name: "array index", filter: ".[0]", tokens: 1},
-		{name: "key then index", filter: ".items.[0]", tokens: 2},
-		{name: "key then index no dot", filter: ".items[0]", tokens: 2},
-		{name: "deep nesting", filter: ".a.b.c.d", tokens: 4},
-		{name: "index then key", filter: ".[0].name", tokens: 2},
+		{name: "identity", filter: ".", stages: 1, tokens: 1},
+		{name: "single key", filter: ".name", stages: 1, tokens: 1},
+		{name: "nested key", filter: ".user.name", stages: 1, tokens: 2},
+		{name: "array index", filter: ".[0]", stages: 1, tokens: 1},
+		{name: "key then index", filter: ".items.[0]", stages: 1, tokens: 2},
+		{name: "key then index no dot", filter: ".items[0]", stages: 1, tokens: 2},
+		{name: "deep nesting", filter: ".a.b.c.d", stages: 1, tokens: 4},
+		{name: "index then key", filter: ".[0].name", stages: 1, tokens: 2},
+		// Tier 2: iterator
+		{name: "iterator", filter: ".[]", stages: 1, tokens: 1},
+		{name: "key then iterator", filter: ".items[]", stages: 1, tokens: 2},
+		{name: "iterator then key", filter: ".[].name", stages: 1, tokens: 2},
+		// Tier 2: pipe
+		{name: "pipe two stages", filter: ".a | .b", stages: 2, tokens: 1},
+		{name: "pipe three stages", filter: ".a | .b | .c", stages: 3, tokens: 1},
+		{name: "pipe with iterator", filter: ".[] | .name", stages: 2, tokens: 1},
+		{name: "pipe with identity", filter: ". | .name", stages: 2, tokens: 1},
+		// Tier 2: length function
+		{name: "length function", filter: "length", stages: 1, tokens: 1},
+		{name: "pipe to length", filter: ". | length", stages: 2, tokens: 1},
+		{name: "key pipe length", filter: ".items | length", stages: 2, tokens: 1},
+		// Errors
 		{name: "no leading dot", filter: "name", wantErr: true},
 		{name: "unclosed bracket", filter: ".[0", wantErr: true},
 		{name: "non-numeric index", filter: ".[abc]", wantErr: true},
 		{name: "empty key", filter: "..", wantErr: true},
+		{name: "empty pipe stage leading", filter: "| .name", wantErr: true},
+		{name: "empty pipe stage trailing", filter: ".name |", wantErr: true},
+		{name: "empty pipe stage middle", filter: ".a | | .b", wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tokens, err := parseFilter(tt.filter)
+			stages, err := parseFilter(tt.filter)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error for filter %q", tt.filter)
@@ -41,8 +59,11 @@ func TestParseFilter(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if len(tokens) != tt.tokens {
-				t.Errorf("got %d tokens, want %d", len(tokens), tt.tokens)
+			if len(stages) != tt.stages {
+				t.Errorf("got %d stages, want %d", len(stages), tt.stages)
+			}
+			if len(stages[0]) != tt.tokens {
+				t.Errorf("first stage: got %d tokens, want %d", len(stages[0]), tt.tokens)
 			}
 		})
 	}
@@ -55,7 +76,7 @@ func TestApplyFilter(t *testing.T) {
 		filter string
 		want   string
 	}{
-		// Normal cases
+		// Normal cases (Tier 1)
 		{
 			name:   "identity returns full object",
 			json:   `{"name":"alice","age":30}`,
@@ -134,7 +155,6 @@ func TestApplyFilter(t *testing.T) {
 			filter: ".[-1]",
 			want:   "3\n",
 		},
-		// Edge cases
 		{
 			name:   "deeply nested",
 			json:   `{"a":{"b":{"c":{"d":"deep"}}}}`,
@@ -176,6 +196,318 @@ func TestApplyFilter(t *testing.T) {
 			json:   `{"msg":"hello \"world\""}`,
 			filter: ".msg",
 			want:   "\"hello \\\"world\\\"\"\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := processReader(strings.NewReader(tt.json), mustParseFilter(t, tt.filter), &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("exit code %d, stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != tt.want {
+				t.Errorf("got %q, want %q", stdout.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestIterator(t *testing.T) {
+	tests := []struct {
+		name   string
+		json   string
+		filter string
+		want   string
+	}{
+		{
+			name:   "iterate array",
+			json:   `[1,2,3]`,
+			filter: ".[]",
+			want:   "1\n2\n3\n",
+		},
+		{
+			name:   "iterate string array",
+			json:   `["a","b","c"]`,
+			filter: ".[]",
+			want:   "\"a\"\n\"b\"\n\"c\"\n",
+		},
+		{
+			name:   "iterate object values sorted by key",
+			json:   `{"b":2,"a":1}`,
+			filter: ".[]",
+			want:   "1\n2\n",
+		},
+		{
+			name:   "iterate nested array via key",
+			json:   `{"items":[10,20,30]}`,
+			filter: ".items[]",
+			want:   "10\n20\n30\n",
+		},
+		{
+			name:   "iterate then access key",
+			json:   `[{"name":"alice"},{"name":"bob"}]`,
+			filter: ".[].name",
+			want:   "\"alice\"\n\"bob\"\n",
+		},
+		{
+			name:   "iterate with pipe",
+			json:   `[{"id":1},{"id":2}]`,
+			filter: ".[] | .id",
+			want:   "1\n2\n",
+		},
+		{
+			name:   "key pipe iterate pipe key",
+			json:   `{"users":[{"name":"alice"},{"name":"bob"}]}`,
+			filter: ".users | .[] | .name",
+			want:   "\"alice\"\n\"bob\"\n",
+		},
+		{
+			name:   "empty array iteration",
+			json:   `[]`,
+			filter: ".[]",
+			want:   "",
+		},
+		{
+			name:   "empty object iteration",
+			json:   `{}`,
+			filter: ".[]",
+			want:   "",
+		},
+		{
+			name:   "iterate array of arrays",
+			json:   `[[1,2],[3,4]]`,
+			filter: ".[]",
+			want:   "[\n  1,\n  2\n]\n[\n  3,\n  4\n]\n",
+		},
+		{
+			name:   "nested iterate",
+			json:   `[[1,2],[3]]`,
+			filter: ".[] | .[]",
+			want:   "1\n2\n3\n",
+		},
+		{
+			name:   "iterate multibyte values",
+			json:   `["あ","い","う"]`,
+			filter: ".[]",
+			want:   "\"あ\"\n\"い\"\n\"う\"\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := processReader(strings.NewReader(tt.json), mustParseFilter(t, tt.filter), &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("exit code %d, stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != tt.want {
+				t.Errorf("got %q, want %q", stdout.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestIteratorErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		json   string
+		filter string
+	}{
+		{
+			name:   "iterate over string",
+			json:   `"hello"`,
+			filter: ".[]",
+		},
+		{
+			name:   "iterate over number",
+			json:   `42`,
+			filter: ".[]",
+		},
+		{
+			name:   "iterate over boolean",
+			json:   `true`,
+			filter: ".[]",
+		},
+		{
+			name:   "iterate over null",
+			json:   `null`,
+			filter: ".[]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := processReader(strings.NewReader(tt.json), mustParseFilter(t, tt.filter), &stdout, &stderr)
+			if code != 1 {
+				t.Errorf("expected exit code 1, got %d", code)
+			}
+		})
+	}
+}
+
+func TestLength(t *testing.T) {
+	tests := []struct {
+		name   string
+		json   string
+		filter string
+		want   string
+	}{
+		{
+			name:   "length of array",
+			json:   `[1,2,3]`,
+			filter: "length",
+			want:   "3\n",
+		},
+		{
+			name:   "length of empty array",
+			json:   `[]`,
+			filter: "length",
+			want:   "0\n",
+		},
+		{
+			name:   "length of object",
+			json:   `{"a":1,"b":2,"c":3}`,
+			filter: "length",
+			want:   "3\n",
+		},
+		{
+			name:   "length of empty object",
+			json:   `{}`,
+			filter: "length",
+			want:   "0\n",
+		},
+		{
+			name:   "length of string",
+			json:   `"hello"`,
+			filter: "length",
+			want:   "5\n",
+		},
+		{
+			name:   "length of multibyte string",
+			json:   `"こんにちは"`,
+			filter: "length",
+			want:   "5\n",
+		},
+		{
+			name:   "length of null",
+			json:   `null`,
+			filter: "length",
+			want:   "0\n",
+		},
+		{
+			name:   "length of number (absolute value)",
+			json:   `-42`,
+			filter: "length",
+			want:   "42\n",
+		},
+		{
+			name:   "length of positive number",
+			json:   `3.14`,
+			filter: "length",
+			want:   "3.14\n",
+		},
+		{
+			name:   "length via pipe",
+			json:   `{"items":[1,2,3,4,5]}`,
+			filter: ".items | length",
+			want:   "5\n",
+		},
+		{
+			name:   "length of each element",
+			json:   `["ab","cde","f"]`,
+			filter: ".[] | length",
+			want:   "2\n3\n1\n",
+		},
+		{
+			name:   "length of nested array via key",
+			json:   `{"data":{"list":[1,2,3]}}`,
+			filter: ".data.list | length",
+			want:   "3\n",
+		},
+		{
+			name:   "length of string with emoji",
+			json:   `"hello🌍"`,
+			filter: "length",
+			want:   "6\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := processReader(strings.NewReader(tt.json), mustParseFilter(t, tt.filter), &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("exit code %d, stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != tt.want {
+				t.Errorf("got %q, want %q", stdout.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestLengthErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		json   string
+		filter string
+	}{
+		{
+			name:   "length of boolean",
+			json:   `true`,
+			filter: "length",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := processReader(strings.NewReader(tt.json), mustParseFilter(t, tt.filter), &stdout, &stderr)
+			if code != 1 {
+				t.Errorf("expected exit code 1, got %d", code)
+			}
+		})
+	}
+}
+
+func TestPipe(t *testing.T) {
+	tests := []struct {
+		name   string
+		json   string
+		filter string
+		want   string
+	}{
+		{
+			name:   "identity pipe key",
+			json:   `{"name":"alice"}`,
+			filter: ". | .name",
+			want:   "\"alice\"\n",
+		},
+		{
+			name:   "key pipe key",
+			json:   `{"user":{"name":"bob"}}`,
+			filter: ".user | .name",
+			want:   "\"bob\"\n",
+		},
+		{
+			name:   "three stage pipe",
+			json:   `{"a":{"b":{"c":"deep"}}}`,
+			filter: ".a | .b | .c",
+			want:   "\"deep\"\n",
+		},
+		{
+			name:   "pipe fan out then collect",
+			json:   `[{"x":1},{"x":2},{"x":3}]`,
+			filter: ".[] | .x",
+			want:   "1\n2\n3\n",
+		},
+		{
+			name:   "pipe with length after iterate",
+			json:   `[{"items":[1,2]},{"items":[3,4,5]}]`,
+			filter: ".[] | .items | length",
+			want:   "2\n3\n",
 		},
 	}
 
@@ -283,6 +615,27 @@ func TestRun(t *testing.T) {
 			wantCode: 2,
 			wantErr:  "invalid filter",
 		},
+		{
+			name:     "pipe via stdin",
+			args:     []string{".items | .[]"},
+			stdin:    `{"items":[1,2,3]}`,
+			wantCode: 0,
+			wantOut:  "1\n2\n3\n",
+		},
+		{
+			name:     "length via stdin",
+			args:     []string{"length"},
+			stdin:    `[1,2,3,4]`,
+			wantCode: 0,
+			wantOut:  "4\n",
+		},
+		{
+			name:     "empty pipe stage error",
+			args:     []string{".a | | .b"},
+			stdin:    `{}`,
+			wantCode: 2,
+			wantErr:  "empty pipeline stage",
+		},
 	}
 
 	for _, tt := range tests {
@@ -343,18 +696,6 @@ func TestRunMultipleFiles(t *testing.T) {
 }
 
 func TestLargeJSON(t *testing.T) {
-	// Build a large array
-	var sb strings.Builder
-	sb.WriteString("[")
-	for i := 0; i < 1000; i++ {
-		if i > 0 {
-			sb.WriteString(",")
-		}
-		sb.WriteString(`{"id":` + strings.Repeat("0", 0) + `}`)
-		// Just use the index
-		sb.Reset()
-	}
-	// Simpler: large nested object
 	input := `{"data":{"nested":{"value":999}}}`
 	var stdout, stderr bytes.Buffer
 	code := processReader(strings.NewReader(input), mustParseFilter(t, ".data.nested.value"), &stdout, &stderr)
@@ -366,11 +707,19 @@ func TestLargeJSON(t *testing.T) {
 	}
 }
 
-func mustParseFilter(t *testing.T, filter string) []token {
+func TestUnknownFunction(t *testing.T) {
+	// "unknown" is not a valid function, but it starts without "." so parseFilter should reject it
+	_, err := parseFilter("unknown")
+	if err == nil {
+		t.Fatal("expected error for unknown bare word")
+	}
+}
+
+func mustParseFilter(t *testing.T, filter string) [][]token {
 	t.Helper()
-	tokens, err := parseFilter(filter)
+	stages, err := parseFilter(filter)
 	if err != nil {
 		t.Fatalf("parseFilter(%q): %v", filter, err)
 	}
-	return tokens
+	return stages
 }

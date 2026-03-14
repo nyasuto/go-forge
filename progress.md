@@ -180,3 +180,7 @@
 ## gf-jq Tier 1: 基本パスアクセス・stdin対応
 - 完了日: 2026-03-14
 - 作業内容: cmd/gf-jq/ 作成（go.mod初期化、go.workに追加）。`.key`、`.key.nested`、`.[0]`の基本パスアクセス。`parseFilter`関数でフィルタ式をトークン列にパース、`applyFilter`関数でJSON値にフィルタ適用。負のインデックス対応、存在しないキー/範囲外インデックスはnull返却。`encoding/json`でパース、型別出力（文字列はクォート付き、整数は小数点なし、オブジェクト/配列はインデント付き）。stdin対応（引数なし・ハイフン）、複数ファイル対応、--version表示、エラーハンドリング。マルチバイトキー対応。単体テスト12件（parseFilter）+20件（applyFilter）+2件（errors）+2件（invalidJSON/empty）+統合テスト9件、全45件PASS。
+
+## gf-jq Tier 2: パイプ・配列操作・length
+- 完了日: 2026-03-14
+- 作業内容: フィルタシステムをパイプライン方式（`[][]token`）に全面リファクタ。`|`でフィルタを複数ステージに分割し、各ステージの出力を次のステージの入力に渡す`applyPipeline`/`applyStage`関数を実装。`.[]`配列/オブジェクトイテレータ追加（配列は全要素展開、オブジェクトはキーのアルファベット順で値を展開、ファンアウト対応）。`length`組み込み関数追加（配列→要素数、オブジェクト→キー数、文字列→rune数、null→0、数値→絶対値）。`.items[]`や`.[].name`のような単一ステージ内でのイテレータ+アクセスの組み合わせ、`.[] | .items | length`のような複数ステージパイプラインも全て動作。テスト30件追加（Iterator 12件、IteratorErrors 4件、Length 13件、LengthErrors 1件、Pipe 5件、Run追加3件、UnknownFunction 1件、ParseFilter追加14件）、累計75件ALL PASS。
