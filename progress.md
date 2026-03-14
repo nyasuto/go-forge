@@ -228,3 +228,7 @@
 ## gf-claude-quota Phase 7: Linux対応・クロスプラットフォーム
 - 完了日: 2026-03-14
 - 作業内容: `internal/credentials/credentials.go`に共通`CredentialProvider`インターフェース定義と`GetToken()`関数（CLAUDE_OAUTH_TOKEN環境変数→プラットフォーム固有の優先度）。`internal/credentials/linux.go`に`GetTokenFromFile()`関数（`~/.config/claude-code/credentials.json`直接読み取り）。GOOSビルドタグで`provider_darwin.go`（macOS Keychain）、`provider_linux.go`（ファイル読み取り）、`provider_other.go`（フォールバック）にOS分岐。通知もビルドタグで`notify_darwin.go`（osascript）、`notify_linux.go`（notify-send）、`notify_other.go`（no-op）に分離。main.goの`credentials.GetTokenFromKeychain(nil)`を`credentials.GetToken()`に変更。`GOOS=linux GOARCH=amd64 go build`でクロスコンパイル確認済み。テスト11件追加、累計114件ALL PASS。
+
+## Task Final: 統合テスト
+- 完了日: 2026-03-14
+- 作業内容: 全16ツール（gf-claude-quota除く）のパイプチェーン連携テスト。`integration_test.sh`スクリプトで20パイプチェーンシナリオ（21アサーション）を実装。gf-find|gf-xargs|gf-grep|gf-wc、gf-cat|gf-sort|gf-uniq（頻度ランキング）、gf-cat|gf-head|gf-tail（特定行抽出）、gf-cat|gf-tee|gf-wc（分岐出力）、gf-jq|gf-grep（JSON展開→フィルタ）、gf-diff -u|gf-grep（diff出力フィルタ）、gf-tree|gf-grep（ツリー出力検索）、gf-hexdump|gf-head（バイナリダンプ→先頭行）等、全ツールの連携動作を検証。21件全PASS。結果を`docs/test-results/integration.md`に記録。

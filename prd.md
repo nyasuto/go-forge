@@ -366,7 +366,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 ### Task Final: 統合テスト
 
-- [ ] 全ツールのパイプチェーン連携テスト。例: `gf-find . -name "*.go" | gf-grep "func" | gf-wc -l`。結果を `docs/test-results/integration.md` に記録。
+- [x] 全ツールのパイプチェーン連携テスト。例: `gf-find . -name "*.go" | gf-grep "func" | gf-wc -l`。結果を `docs/test-results/integration.md` に記録。
 
 ## 成功基準
 
