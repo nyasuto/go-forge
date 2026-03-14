@@ -151,7 +151,7 @@ func TestWalkDir(t *testing.T) {
 			r, w, _ := os.Pipe()
 			os.Stdout = w
 
-			stats, err := walkDir(dir, "")
+			stats, err := walkDir(dir, "", 1, treeOptions{})
 
 			w.Close()
 			os.Stdout = old
@@ -191,7 +191,7 @@ func TestPrintTree(t *testing.T) {
 		r, w, _ := os.Pipe()
 		os.Stdout = w
 
-		_, err := printTree(dir, "")
+		_, err := printTree(dir, "", treeOptions{})
 
 		w.Close()
 		os.Stdout = old
@@ -210,7 +210,7 @@ func TestPrintTree(t *testing.T) {
 	})
 
 	t.Run("error on non-existent path", func(t *testing.T) {
-		_, err := printTree("/nonexistent/path/xyz", "")
+		_, err := printTree("/nonexistent/path/xyz", "", treeOptions{})
 		if err == nil {
 			t.Error("expected error for non-existent path")
 		}
@@ -221,11 +221,216 @@ func TestPrintTree(t *testing.T) {
 		f := filepath.Join(tmp, "file.txt")
 		os.WriteFile(f, []byte("x"), 0644)
 
-		_, err := printTree(f, "")
+		_, err := printTree(f, "", treeOptions{})
 		if err == nil {
 			t.Error("expected error for file path")
 		}
 	})
+}
+
+// --- Unit tests for -L depth limit ---
+
+func TestWalkDirWithDepthLimit(t *testing.T) {
+	tests := []struct {
+		name      string
+		maxDepth  int
+		wantDirs  int
+		wantFiles int
+		wantLines []string
+		notWant   []string
+	}{
+		{
+			name:      "depth 1 shows only top-level",
+			maxDepth:  1,
+			wantDirs:  2,
+			wantFiles: 2,
+			wantLines: []string{"├── dir1", "├── dir2", "├── file1.txt", "└── file2.txt"},
+			notWant:   []string{"a.go", "subdir1", "deep.txt", "b.txt"},
+		},
+		{
+			name:      "depth 2 shows two levels",
+			maxDepth:  2,
+			wantDirs:  3,
+			wantFiles: 4,
+			wantLines: []string{"├── dir1", "│   ├── a.go", "│   └── subdir1", "├── dir2", "│   └── b.txt"},
+			notWant:   []string{"deep.txt"},
+		},
+		{
+			name:      "depth 0 means unlimited",
+			maxDepth:  0,
+			wantDirs:  3,
+			wantFiles: 5,
+			wantLines: []string{"deep.txt"},
+		},
+		{
+			name:      "depth exceeding tree depth shows all",
+			maxDepth:  100,
+			wantDirs:  3,
+			wantFiles: 5,
+			wantLines: []string{"deep.txt"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := createTestTree(t)
+
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			opts := treeOptions{maxDepth: tt.maxDepth}
+			stats, err := walkDir(root, "", 1, opts)
+
+			w.Close()
+			os.Stdout = old
+
+			var buf bytes.Buffer
+			buf.ReadFrom(r)
+			output := buf.String()
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if stats.dirs != tt.wantDirs {
+				t.Errorf("dirs = %d, want %d", stats.dirs, tt.wantDirs)
+			}
+			if stats.files != tt.wantFiles {
+				t.Errorf("files = %d, want %d", stats.files, tt.wantFiles)
+			}
+
+			for _, line := range tt.wantLines {
+				if !strings.Contains(output, line) {
+					t.Errorf("output missing expected %q\nfull output:\n%s", line, output)
+				}
+			}
+			for _, line := range tt.notWant {
+				if strings.Contains(output, line) {
+					t.Errorf("output should NOT contain %q\nfull output:\n%s", line, output)
+				}
+			}
+		})
+	}
+}
+
+// --- Unit tests for -I exclude pattern ---
+
+func TestWalkDirWithExclude(t *testing.T) {
+	tests := []struct {
+		name      string
+		exclude   string
+		wantDirs  int
+		wantFiles int
+		wantLines []string
+		notWant   []string
+	}{
+		{
+			name:      "exclude by extension",
+			exclude:   "*.txt",
+			wantDirs:  3,
+			wantFiles: 1,
+			wantLines: []string{"a.go"},
+			notWant:   []string{"file1.txt", "file2.txt", "deep.txt", "b.txt"},
+		},
+		{
+			name:      "exclude directory by name",
+			exclude:   "dir1",
+			wantDirs:  1,
+			wantFiles: 3,
+			wantLines: []string{"dir2", "file1.txt", "file2.txt", "b.txt"},
+			notWant:   []string{"dir1", "a.go", "subdir1"},
+		},
+		{
+			name:      "exclude with glob pattern",
+			exclude:   "file*",
+			wantDirs:  3,
+			wantFiles: 3,
+			wantLines: []string{"dir1", "dir2", "a.go", "deep.txt", "b.txt"},
+			notWant:   []string{"file1.txt", "file2.txt"},
+		},
+		{
+			name:      "no match excludes nothing",
+			exclude:   "*.xyz",
+			wantDirs:  3,
+			wantFiles: 5,
+		},
+		{
+			name:      "exclude applied at all levels",
+			exclude:   "*.go",
+			wantDirs:  3,
+			wantFiles: 4,
+			notWant:   []string{"a.go"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := createTestTree(t)
+
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			opts := treeOptions{exclude: tt.exclude}
+			stats, err := walkDir(root, "", 1, opts)
+
+			w.Close()
+			os.Stdout = old
+
+			var buf bytes.Buffer
+			buf.ReadFrom(r)
+			output := buf.String()
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if stats.dirs != tt.wantDirs {
+				t.Errorf("dirs = %d, want %d", stats.dirs, tt.wantDirs)
+			}
+			if stats.files != tt.wantFiles {
+				t.Errorf("files = %d, want %d", stats.files, tt.wantFiles)
+			}
+
+			for _, line := range tt.wantLines {
+				if !strings.Contains(output, line) {
+					t.Errorf("output missing expected %q\nfull output:\n%s", line, output)
+				}
+			}
+			for _, line := range tt.notWant {
+				if strings.Contains(output, line) {
+					t.Errorf("output should NOT contain %q\nfull output:\n%s", line, output)
+				}
+			}
+		})
+	}
+}
+
+// --- Unit test for isExcluded ---
+
+func TestIsExcluded(t *testing.T) {
+	tests := []struct {
+		name    string
+		entry   string
+		pattern string
+		want    bool
+	}{
+		{"match extension", "test.txt", "*.txt", true},
+		{"no match extension", "test.go", "*.txt", false},
+		{"match prefix", "node_modules", "node*", true},
+		{"empty pattern", "test.txt", "", false},
+		{"exact match", "Makefile", "Makefile", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isExcluded(tt.entry, tt.pattern)
+			if got != tt.want {
+				t.Errorf("isExcluded(%q, %q) = %v, want %v", tt.entry, tt.pattern, got, tt.want)
+			}
+		})
+	}
 }
 
 // --- Integration tests ---
@@ -360,6 +565,114 @@ func TestIntegration(t *testing.T) {
 		if !strings.Contains(output, "3 directories, 5 files") {
 			t.Errorf("expected '3 directories, 5 files', got:\n%s", output)
 		}
+	})
+
+	t.Run("-L depth limit", func(t *testing.T) {
+		root := createTestTree(t)
+		cmd := exec.Command(binary, "-L", "1", root)
+		out, err := cmd.CombinedOutput()
+		output := string(out)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v\noutput: %s", err, output)
+		}
+
+		if strings.Contains(output, "a.go") || strings.Contains(output, "subdir1") {
+			t.Errorf("-L 1 should not show nested entries, got:\n%s", output)
+		}
+		if !strings.Contains(output, "dir1") || !strings.Contains(output, "file1.txt") {
+			t.Errorf("-L 1 should show top-level entries, got:\n%s", output)
+		}
+	})
+
+	t.Run("-L 2 depth limit", func(t *testing.T) {
+		root := createTestTree(t)
+		cmd := exec.Command(binary, "-L", "2", root)
+		out, err := cmd.CombinedOutput()
+		output := string(out)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v\noutput: %s", err, output)
+		}
+
+		if strings.Contains(output, "deep.txt") {
+			t.Errorf("-L 2 should not show level 3 entries, got:\n%s", output)
+		}
+		if !strings.Contains(output, "a.go") || !strings.Contains(output, "subdir1") {
+			t.Errorf("-L 2 should show level 2 entries, got:\n%s", output)
+		}
+	})
+
+	t.Run("-I exclude pattern", func(t *testing.T) {
+		root := createTestTree(t)
+		cmd := exec.Command(binary, "-I", "*.txt", root)
+		out, err := cmd.CombinedOutput()
+		output := string(out)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v\noutput: %s", err, output)
+		}
+
+		if strings.Contains(output, ".txt") {
+			t.Errorf("-I '*.txt' should exclude .txt files, got:\n%s", output)
+		}
+		if !strings.Contains(output, "a.go") {
+			t.Errorf("-I '*.txt' should keep .go files, got:\n%s", output)
+		}
+	})
+
+	t.Run("-I exclude directory", func(t *testing.T) {
+		root := createTestTree(t)
+		cmd := exec.Command(binary, "-I", "dir1", root)
+		out, err := cmd.CombinedOutput()
+		output := string(out)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v\noutput: %s", err, output)
+		}
+
+		if strings.Contains(output, "dir1") {
+			t.Errorf("-I dir1 should exclude dir1 and its contents, got:\n%s", output)
+		}
+		if !strings.Contains(output, "dir2") {
+			t.Errorf("-I dir1 should keep dir2, got:\n%s", output)
+		}
+	})
+
+	t.Run("-L and -I combined", func(t *testing.T) {
+		root := createTestTree(t)
+		cmd := exec.Command(binary, "-L", "2", "-I", "*.txt", root)
+		out, err := cmd.CombinedOutput()
+		output := string(out)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v\noutput: %s", err, output)
+		}
+
+		if strings.Contains(output, ".txt") {
+			t.Errorf("should exclude .txt files, got:\n%s", output)
+		}
+		if strings.Contains(output, "deep.txt") {
+			t.Errorf("should not show level 3 entries, got:\n%s", output)
+		}
+		if !strings.Contains(output, "a.go") {
+			t.Errorf("should show a.go at level 2, got:\n%s", output)
+		}
+	})
+
+	t.Run("-L negative value exits with code 2", func(t *testing.T) {
+		cmd := exec.Command(binary, "-L", "-1", ".")
+		out, err := cmd.CombinedOutput()
+
+		if err == nil {
+			t.Error("expected non-zero exit code for negative -L")
+		}
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if exitErr.ExitCode() != 2 {
+				t.Errorf("expected exit code 2, got %d", exitErr.ExitCode())
+			}
+		}
+		_ = out
 	})
 
 	t.Run("tree structure ordering", func(t *testing.T) {
