@@ -7,9 +7,33 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode"
 )
 
 const version = "0.1.0"
+
+// ANSI color codes
+const (
+	colorReset   = "\033[0m"
+	colorRed     = "\033[31m"
+	colorGreen   = "\033[32m"
+	colorCyan    = "\033[36m"
+	colorBoldRed = "\033[1;31m"
+	colorBoldGrn = "\033[1;32m"
+)
+
+// isTerminal checks if the writer is connected to a terminal.
+var isTerminal = func(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -20,6 +44,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	showVersion := fs.Bool("version", false, "show version")
 	unified := fs.Bool("u", false, "unified diff format")
+	colorFlag := fs.String("color", "auto", "color output: auto|always|never")
+	wordDiff := fs.Bool("word", false, "word-level diff within changed lines")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -29,6 +55,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "gf-diff version "+version)
 		return 0
 	}
+
+	// Validate color flag
+	switch *colorFlag {
+	case "auto", "always", "never":
+	default:
+		fmt.Fprintf(stderr, "gf-diff: invalid --color value: %s (use auto, always, or never)\n", *colorFlag)
+		return 2
+	}
+
+	useColor := *colorFlag == "always" || (*colorFlag == "auto" && isTerminal(stdout))
 
 	remaining := fs.Args()
 	if len(remaining) != 2 {
@@ -55,22 +91,99 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	opts := outputOpts{
+		color:    useColor,
+		wordDiff: *wordDiff,
+	}
+
 	if *unified {
-		printUnified(stdout, file1, file2, edits, 3)
+		printUnified(stdout, file1, file2, edits, 3, opts)
 	} else {
-		for _, e := range edits {
-			switch e.op {
-			case opDelete:
-				fmt.Fprintf(stdout, "< %s\n", e.line)
-			case opInsert:
-				fmt.Fprintf(stdout, "> %s\n", e.line)
-			case opEqual:
-				fmt.Fprintf(stdout, "  %s\n", e.line)
-			}
-		}
+		printNormal(stdout, edits, opts)
 	}
 
 	return 1
+}
+
+type outputOpts struct {
+	color    bool
+	wordDiff bool
+}
+
+func printNormal(w io.Writer, edits []edit, opts outputOpts) {
+	if opts.wordDiff {
+		printNormalWordDiff(w, edits, opts)
+		return
+	}
+	for _, e := range edits {
+		switch e.op {
+		case opDelete:
+			if opts.color {
+				fmt.Fprintf(w, "%s< %s%s\n", colorRed, e.line, colorReset)
+			} else {
+				fmt.Fprintf(w, "< %s\n", e.line)
+			}
+		case opInsert:
+			if opts.color {
+				fmt.Fprintf(w, "%s> %s%s\n", colorGreen, e.line, colorReset)
+			} else {
+				fmt.Fprintf(w, "> %s\n", e.line)
+			}
+		case opEqual:
+			fmt.Fprintf(w, "  %s\n", e.line)
+		}
+	}
+}
+
+func printNormalWordDiff(w io.Writer, edits []edit, opts outputOpts) {
+	i := 0
+	for i < len(edits) {
+		e := edits[i]
+		if e.op == opEqual {
+			fmt.Fprintf(w, "  %s\n", e.line)
+			i++
+			continue
+		}
+		// Collect adjacent delete/insert pairs for word diff
+		var delLines, insLines []string
+		for i < len(edits) && edits[i].op == opDelete {
+			delLines = append(delLines, edits[i].line)
+			i++
+		}
+		for i < len(edits) && edits[i].op == opInsert {
+			insLines = append(insLines, edits[i].line)
+			i++
+		}
+		// Pair up delete/insert lines for word diff
+		maxPairs := len(delLines)
+		if len(insLines) > maxPairs {
+			maxPairs = len(insLines)
+		}
+		for j := 0; j < maxPairs; j++ {
+			if j < len(delLines) && j < len(insLines) {
+				oldWd, newWd := wordDiffLine(delLines[j], insLines[j])
+				if opts.color {
+					fmt.Fprintf(w, "%s< %s%s\n", colorRed, oldWd, colorReset)
+					fmt.Fprintf(w, "%s> %s%s\n", colorGreen, newWd, colorReset)
+				} else {
+					fmt.Fprintf(w, "< %s\n", oldWd)
+					fmt.Fprintf(w, "> %s\n", newWd)
+				}
+			} else if j < len(delLines) {
+				if opts.color {
+					fmt.Fprintf(w, "%s< %s%s\n", colorRed, delLines[j], colorReset)
+				} else {
+					fmt.Fprintf(w, "< %s\n", delLines[j])
+				}
+			} else {
+				if opts.color {
+					fmt.Fprintf(w, "%s> %s%s\n", colorGreen, insLines[j], colorReset)
+				} else {
+					fmt.Fprintf(w, "> %s\n", insLines[j])
+				}
+			}
+		}
+	}
 }
 
 func readLines(path string) ([]string, error) {
@@ -329,22 +442,142 @@ func buildHunks(edits []edit, contextLines int) []hunk {
 }
 
 // printUnified outputs the diff in unified format.
-func printUnified(w io.Writer, file1, file2 string, edits []edit, contextLines int) {
-	fmt.Fprintf(w, "--- %s\n", file1)
-	fmt.Fprintf(w, "+++ %s\n", file2)
+func printUnified(w io.Writer, file1, file2 string, edits []edit, contextLines int, opts outputOpts) {
+	if opts.color {
+		fmt.Fprintf(w, "%s--- %s%s\n", colorBoldRed, file1, colorReset)
+		fmt.Fprintf(w, "%s+++ %s%s\n", colorBoldGrn, file2, colorReset)
+	} else {
+		fmt.Fprintf(w, "--- %s\n", file1)
+		fmt.Fprintf(w, "+++ %s\n", file2)
+	}
 
 	hunks := buildHunks(edits, contextLines)
 	for _, h := range hunks {
-		fmt.Fprintf(w, "@@ -%d,%d +%d,%d @@\n", h.oldStart, h.oldCount, h.newStart, h.newCount)
-		for _, e := range h.lines {
-			switch e.op {
-			case opEqual:
-				fmt.Fprintf(w, " %s\n", e.line)
-			case opDelete:
-				fmt.Fprintf(w, "-%s\n", e.line)
-			case opInsert:
-				fmt.Fprintf(w, "+%s\n", e.line)
+		if opts.color {
+			fmt.Fprintf(w, "%s@@ -%d,%d +%d,%d @@%s\n", colorCyan, h.oldStart, h.oldCount, h.newStart, h.newCount, colorReset)
+		} else {
+			fmt.Fprintf(w, "@@ -%d,%d +%d,%d @@\n", h.oldStart, h.oldCount, h.newStart, h.newCount)
+		}
+		if opts.wordDiff {
+			printUnifiedHunkWordDiff(w, h.lines, opts)
+		} else {
+			for _, e := range h.lines {
+				printUnifiedLine(w, e, opts)
 			}
 		}
 	}
+}
+
+func printUnifiedLine(w io.Writer, e edit, opts outputOpts) {
+	switch e.op {
+	case opEqual:
+		fmt.Fprintf(w, " %s\n", e.line)
+	case opDelete:
+		if opts.color {
+			fmt.Fprintf(w, "%s-%s%s\n", colorRed, e.line, colorReset)
+		} else {
+			fmt.Fprintf(w, "-%s\n", e.line)
+		}
+	case opInsert:
+		if opts.color {
+			fmt.Fprintf(w, "%s+%s%s\n", colorGreen, e.line, colorReset)
+		} else {
+			fmt.Fprintf(w, "+%s\n", e.line)
+		}
+	}
+}
+
+func printUnifiedHunkWordDiff(w io.Writer, lines []edit, opts outputOpts) {
+	i := 0
+	for i < len(lines) {
+		e := lines[i]
+		if e.op == opEqual {
+			fmt.Fprintf(w, " %s\n", e.line)
+			i++
+			continue
+		}
+		// Collect adjacent delete/insert pairs
+		var delLines, insLines []string
+		for i < len(lines) && lines[i].op == opDelete {
+			delLines = append(delLines, lines[i].line)
+			i++
+		}
+		for i < len(lines) && lines[i].op == opInsert {
+			insLines = append(insLines, lines[i].line)
+			i++
+		}
+		maxPairs := len(delLines)
+		if len(insLines) > maxPairs {
+			maxPairs = len(insLines)
+		}
+		for j := 0; j < maxPairs; j++ {
+			if j < len(delLines) && j < len(insLines) {
+				oldWd, newWd := wordDiffLine(delLines[j], insLines[j])
+				if opts.color {
+					fmt.Fprintf(w, "%s-%s%s\n", colorRed, oldWd, colorReset)
+					fmt.Fprintf(w, "%s+%s%s\n", colorGreen, newWd, colorReset)
+				} else {
+					fmt.Fprintf(w, "-%s\n", oldWd)
+					fmt.Fprintf(w, "+%s\n", newWd)
+				}
+			} else if j < len(delLines) {
+				printUnifiedLine(w, edit{op: opDelete, line: delLines[j]}, opts)
+			} else {
+				printUnifiedLine(w, edit{op: opInsert, line: insLines[j]}, opts)
+			}
+		}
+	}
+}
+
+// splitWords splits a line into tokens: words and whitespace sequences.
+func splitWords(s string) []string {
+	var tokens []string
+	runes := []rune(s)
+	i := 0
+	for i < len(runes) {
+		if unicode.IsSpace(runes[i]) {
+			j := i
+			for j < len(runes) && unicode.IsSpace(runes[j]) {
+				j++
+			}
+			tokens = append(tokens, string(runes[i:j]))
+			i = j
+		} else {
+			j := i
+			for j < len(runes) && !unicode.IsSpace(runes[j]) {
+				j++
+			}
+			tokens = append(tokens, string(runes[i:j]))
+			i = j
+		}
+	}
+	return tokens
+}
+
+// wordDiffLine computes word-level diff between two lines and returns
+// annotated strings with [- -] and [+ +] markers around changed words.
+func wordDiffLine(oldLine, newLine string) (string, string) {
+	oldWords := splitWords(oldLine)
+	newWords := splitWords(newLine)
+
+	wordEdits := myersDiff(oldWords, newWords)
+
+	var oldBuf, newBuf strings.Builder
+	for _, e := range wordEdits {
+		switch e.op {
+		case opEqual:
+			oldBuf.WriteString(e.line)
+			newBuf.WriteString(e.line)
+		case opDelete:
+			oldBuf.WriteString("[-")
+			oldBuf.WriteString(e.line)
+			oldBuf.WriteString("-]")
+		case opInsert:
+			newBuf.WriteString("[+")
+			newBuf.WriteString(e.line)
+			newBuf.WriteString("+]")
+		}
+	}
+
+	return oldBuf.String(), newBuf.String()
 }

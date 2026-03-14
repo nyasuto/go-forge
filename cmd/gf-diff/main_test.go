@@ -536,3 +536,300 @@ func TestRunLargeInput(t *testing.T) {
 		t.Error("expected inserted line in output")
 	}
 }
+
+// --- Unit tests for splitWords ---
+
+func TestSplitWords(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"empty", "", nil},
+		{"single word", "hello", []string{"hello"}},
+		{"two words", "hello world", []string{"hello", " ", "world"}},
+		{"leading space", "  hello", []string{"  ", "hello"}},
+		{"trailing space", "hello  ", []string{"hello", "  "}},
+		{"multiple spaces", "a  b  c", []string{"a", "  ", "b", "  ", "c"}},
+		{"tabs and spaces", "a\t b", []string{"a", "\t ", "b"}},
+		{"multibyte words", "こんにちは 世界", []string{"こんにちは", " ", "世界"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitWords(tt.input)
+			if len(got) != len(tt.want) {
+				t.Fatalf("expected %d tokens, got %d: %q", len(tt.want), len(got), got)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("token[%d]: expected %q, got %q", i, tt.want[i], got[i])
+				}
+			}
+		})
+	}
+}
+
+// --- Unit tests for wordDiffLine ---
+
+func TestWordDiffLine(t *testing.T) {
+	tests := []struct {
+		name    string
+		oldLine string
+		newLine string
+		wantOld string
+		wantNew string
+	}{
+		{
+			name:    "single word change",
+			oldLine: "hello world",
+			newLine: "hello earth",
+			wantOld: "hello [-world-]",
+			wantNew: "hello [+earth+]",
+		},
+		{
+			name:    "word insertion",
+			oldLine: "a c",
+			newLine: "a b c",
+			wantOld: "a c",
+			wantNew: "a [+b+][+ +]c",
+		},
+		{
+			name:    "word deletion",
+			oldLine: "a b c",
+			newLine: "a c",
+			wantOld: "a [-b-][- -]c",
+			wantNew: "a c",
+		},
+		{
+			name:    "completely different",
+			oldLine: "foo bar",
+			newLine: "baz qux",
+			wantOld: "[-foo-] [-bar-]",
+			wantNew: "[+baz+] [+qux+]",
+		},
+		{
+			name:    "identical lines",
+			oldLine: "same text",
+			newLine: "same text",
+			wantOld: "same text",
+			wantNew: "same text",
+		},
+		{
+			name:    "multibyte word change",
+			oldLine: "こんにちは 世界",
+			newLine: "こんにちは 日本",
+			wantOld: "こんにちは [-世界-]",
+			wantNew: "こんにちは [+日本+]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotOld, gotNew := wordDiffLine(tt.oldLine, tt.newLine)
+			if gotOld != tt.wantOld {
+				t.Errorf("old: expected %q, got %q", tt.wantOld, gotOld)
+			}
+			if gotNew != tt.wantNew {
+				t.Errorf("new: expected %q, got %q", tt.wantNew, gotNew)
+			}
+		})
+	}
+}
+
+// --- Integration tests for color output ---
+
+func TestRunColorAlways(t *testing.T) {
+	tmpDir := t.TempDir()
+	f1 := writeTestFile(t, tmpDir, "color_a.txt", "a\nb\nc\n")
+	f2 := writeTestFile(t, tmpDir, "color_b.txt", "a\nx\nc\n")
+
+	t.Run("normal mode with color", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"--color=always", f1, f2}, &stdout, &stderr)
+		if code != 1 {
+			t.Errorf("expected exit code 1, got %d", code)
+		}
+		output := stdout.String()
+		if !strings.Contains(output, colorRed) {
+			t.Error("expected red color code in output")
+		}
+		if !strings.Contains(output, colorGreen) {
+			t.Error("expected green color code in output")
+		}
+		if !strings.Contains(output, colorReset) {
+			t.Error("expected reset code in output")
+		}
+	})
+
+	t.Run("unified mode with color", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-u", "--color=always", f1, f2}, &stdout, &stderr)
+		if code != 1 {
+			t.Errorf("expected exit code 1, got %d", code)
+		}
+		output := stdout.String()
+		if !strings.Contains(output, colorBoldRed) {
+			t.Error("expected bold red for --- header")
+		}
+		if !strings.Contains(output, colorBoldGrn) {
+			t.Error("expected bold green for +++ header")
+		}
+		if !strings.Contains(output, colorCyan) {
+			t.Error("expected cyan for @@ header")
+		}
+	})
+}
+
+func TestRunColorNever(t *testing.T) {
+	tmpDir := t.TempDir()
+	f1 := writeTestFile(t, tmpDir, "nocolor_a.txt", "a\nb\nc\n")
+	f2 := writeTestFile(t, tmpDir, "nocolor_b.txt", "a\nx\nc\n")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--color=never", f1, f2}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
+	}
+	output := stdout.String()
+	if strings.Contains(output, "\033[") {
+		t.Error("expected no ANSI escape codes with --color=never")
+	}
+}
+
+func TestRunColorAuto(t *testing.T) {
+	// With bytes.Buffer (not a terminal), auto should produce no color
+	tmpDir := t.TempDir()
+	f1 := writeTestFile(t, tmpDir, "auto_a.txt", "a\nb\nc\n")
+	f2 := writeTestFile(t, tmpDir, "auto_b.txt", "a\nx\nc\n")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--color=auto", f1, f2}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
+	}
+	output := stdout.String()
+	if strings.Contains(output, "\033[") {
+		t.Error("auto mode to non-terminal should not produce color codes")
+	}
+}
+
+func TestRunColorInvalid(t *testing.T) {
+	tmpDir := t.TempDir()
+	f1 := writeTestFile(t, tmpDir, "inv_a.txt", "a\n")
+	f2 := writeTestFile(t, tmpDir, "inv_b.txt", "b\n")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--color=invalid", f1, f2}, &stdout, &stderr)
+	if code != 2 {
+		t.Errorf("expected exit code 2 for invalid color value, got %d", code)
+	}
+}
+
+// --- Integration tests for --word diff ---
+
+func TestRunWordDiffNormal(t *testing.T) {
+	tmpDir := t.TempDir()
+	f1 := writeTestFile(t, tmpDir, "word_a.txt", "hello world\nfoo bar\n")
+	f2 := writeTestFile(t, tmpDir, "word_b.txt", "hello earth\nfoo bar\n")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--word", f1, f2}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "[-world-]") {
+		t.Errorf("expected [-world-] marker, got:\n%s", output)
+	}
+	if !strings.Contains(output, "[+earth+]") {
+		t.Errorf("expected [+earth+] marker, got:\n%s", output)
+	}
+}
+
+func TestRunWordDiffUnified(t *testing.T) {
+	tmpDir := t.TempDir()
+	f1 := writeTestFile(t, tmpDir, "uword_a.txt", "hello world\nfoo bar\n")
+	f2 := writeTestFile(t, tmpDir, "uword_b.txt", "hello earth\nfoo bar\n")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-u", "--word", f1, f2}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "[-world-]") {
+		t.Errorf("expected [-world-] marker in unified word diff, got:\n%s", output)
+	}
+	if !strings.Contains(output, "[+earth+]") {
+		t.Errorf("expected [+earth+] marker in unified word diff, got:\n%s", output)
+	}
+}
+
+func TestRunWordDiffWithColor(t *testing.T) {
+	tmpDir := t.TempDir()
+	f1 := writeTestFile(t, tmpDir, "wc_a.txt", "hello world\n")
+	f2 := writeTestFile(t, tmpDir, "wc_b.txt", "hello earth\n")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--word", "--color=always", f1, f2}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, colorRed) {
+		t.Error("expected color codes in word diff with --color=always")
+	}
+	if !strings.Contains(output, "[-world-]") {
+		t.Errorf("expected word markers in colored output, got:\n%s", output)
+	}
+}
+
+func TestRunWordDiffMultibyte(t *testing.T) {
+	tmpDir := t.TempDir()
+	f1 := writeTestFile(t, tmpDir, "wmb_a.txt", "こんにちは 世界\n")
+	f2 := writeTestFile(t, tmpDir, "wmb_b.txt", "こんにちは 日本\n")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--word", f1, f2}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "[-世界-]") {
+		t.Errorf("expected [-世界-] marker, got:\n%s", output)
+	}
+	if !strings.Contains(output, "[+日本+]") {
+		t.Errorf("expected [+日本+] marker, got:\n%s", output)
+	}
+}
+
+func TestRunWordDiffInsertOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	f1 := writeTestFile(t, tmpDir, "wio_a.txt", "a c\n")
+	f2 := writeTestFile(t, tmpDir, "wio_b.txt", "a b c\n")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--word", f1, f2}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "[+b+]") {
+		t.Errorf("expected word insertion markers, got:\n%s", output)
+	}
+}
+
+func TestRunWordDiffDeleteOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	f1 := writeTestFile(t, tmpDir, "wdo_a.txt", "a b c\n")
+	f2 := writeTestFile(t, tmpDir, "wdo_b.txt", "a c\n")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--word", f1, f2}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected exit code 1, got %d", code)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "[-b-]") {
+		t.Errorf("expected word deletion markers, got:\n%s", output)
+	}
+}

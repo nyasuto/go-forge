@@ -160,3 +160,7 @@
 ## gf-diff Tier 2: unified diff format (`-u`) 出力
 - 完了日: 2026-03-14
 - 作業内容: `-u`フラグでunified diff format出力を追加。`buildHunks`関数でeditsリストからコンテキスト付きhunkを生成（デフォルト3行コンテキスト）。`printUnified`関数で`--- file1`/`+++ file2`ヘッダ＋`@@ -x,y +a,b @@` hunkヘッダ＋`-`/`+`/` `行を出力。近接した変更はhunkをマージ、離れた変更は分割。空ファイル・マルチバイト対応。単体テスト6件(buildHunks)+統合テスト8件(unified format)追加、累計42件ALL PASS。
+
+## gf-diff Tier 3: カラー出力・`--word` 単語単位diff
+- 完了日: 2026-03-14
+- 作業内容: `--color=auto|always|never`フラグ追加。`isTerminal`関数でターミナル検出（`os.ModeCharDevice`判定）、autoモードは非ターミナル時カラー無効。削除行を赤、挿入行を緑、unifiedヘッダ（---を太字赤、+++を太字緑、@@をシアン）でカラー出力。`--word`フラグ追加。`splitWords`関数でrune単位の単語/空白トークン分割。`wordDiffLine`関数で隣接delete/insertペアの行内単語をMyersアルゴリズムで比較し、`[-old-]`/`[+new+]`マーカーで差分表示。通常モード・unifiedモード両対応。`--color`と`--word`の併用も動作。マルチバイト対応。単体テスト14件(splitWords 8件+wordDiffLine 6件)+統合テスト12件(color 5件+word diff 6件+大量入力1件)追加、累計76件ALL PASS。

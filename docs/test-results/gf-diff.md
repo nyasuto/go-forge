@@ -80,9 +80,65 @@
 - empty first file unified: 空ファイルからの挿入
 - empty second file unified: 全行削除
 
+---
+
+## Tier 3: カラー出力・`--word` 単語単位diff
+
+実行日: 2026-03-14
+
+### テスト概要
+
+| カテゴリ | テスト数 | 結果 |
+|----------|----------|------|
+| 単体テスト (splitWords) | 8 | ALL PASS |
+| 単体テスト (wordDiffLine) | 6 | ALL PASS |
+| 統合テスト (color always) | 2 | ALL PASS |
+| 統合テスト (color never) | 1 | ALL PASS |
+| 統合テスト (color auto) | 1 | ALL PASS |
+| 統合テスト (color invalid) | 1 | ALL PASS |
+| 統合テスト (word diff) | 6 | ALL PASS |
+| 大量入力テスト | 1 | ALL PASS |
+| **Tier 3 追加分** | **26** | **ALL PASS** |
+| **累計** | **76** | **ALL PASS** |
+
+### テストケース詳細
+
+#### splitWords 単体テスト
+- empty: 空文字列 → nil
+- single word: 単一単語
+- two words: 2単語（スペース区切り）
+- leading space: 先頭スペース
+- trailing space: 末尾スペース
+- multiple spaces: 複数スペース保持
+- tabs and spaces: タブ+スペース混在
+- multibyte words: マルチバイト単語
+
+#### wordDiffLine 単体テスト
+- single word change: 単語置換 → `[-old-]`/`[+new+]`マーカー
+- word insertion: 単語挿入 → `[+word+]`マーカー
+- word deletion: 単語削除 → `[-word-]`マーカー
+- completely different: 全単語異なる
+- identical lines: 同一行 → マーカーなし
+- multibyte word change: マルチバイト単語の差分
+
+#### カラー出力 統合テスト
+- normal mode with color: `--color=always` で赤/緑/リセットコード出力
+- unified mode with color: `--color=always` で太字赤/太字緑/シアンヘッダ
+- color never: `--color=never` でANSIコードなし
+- color auto (non-terminal): bytes.Buffer → カラーなし
+- color invalid: 不正値 → exit 2
+
+#### word diff 統合テスト
+- normal word diff: 通常モードで`[-/-]`/`[+/+]`マーカー表示
+- unified word diff: `-u --word`でunified形式+ワードマーカー
+- word diff with color: `--word --color=always` 併用
+- multibyte word diff: マルチバイト単語の差分マーカー
+- word insert only: 単語挿入のみ
+- word delete only: 単語削除のみ
+
 ### 実行結果
 
 ```
 PASS
-ok  	gf-diff	0.344s
+ok  	gf-diff	0.341s
 ```
