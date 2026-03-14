@@ -14,4 +14,5 @@ use (
 	./cmd/gf-sed
 	./cmd/gf-xargs
 	./cmd/gf-diff
+	./cmd/gf-tree
 )

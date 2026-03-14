@@ -164,3 +164,7 @@
 ## gf-diff Tier 3: カラー出力・`--word` 単語単位diff
 - 完了日: 2026-03-14
 - 作業内容: `--color=auto|always|never`フラグ追加。`isTerminal`関数でターミナル検出（`os.ModeCharDevice`判定）、autoモードは非ターミナル時カラー無効。削除行を赤、挿入行を緑、unifiedヘッダ（---を太字赤、+++を太字緑、@@をシアン）でカラー出力。`--word`フラグ追加。`splitWords`関数でrune単位の単語/空白トークン分割。`wordDiffLine`関数で隣接delete/insertペアの行内単語をMyersアルゴリズムで比較し、`[-old-]`/`[+new+]`マーカーで差分表示。通常モード・unifiedモード両対応。`--color`と`--word`の併用も動作。マルチバイト対応。単体テスト14件(splitWords 8件+wordDiffLine 6件)+統合テスト12件(color 5件+word diff 6件+大量入力1件)追加、累計76件ALL PASS。
+
+## gf-tree Tier 1: コア機能
+- 完了日: 2026-03-14
+- 作業内容: cmd/gf-tree/ 作成（go.mod初期化、go.workに追加）。再帰的ディレクトリツリー描画（罫線文字 ├──、└──、│ 使用）。`os.ReadDir`でエントリ取得、アルファベット順ソート。ルートディレクトリ名表示、サマリー行（N directories, N files）表示。`treeStats`構造体でディレクトリ・ファイル数を再帰的に集計。stdin対応なし（ディレクトリパス引数必須）、引数なし時はカレントディレクトリ、複数ディレクトリ対応。--version表示、エラーハンドリング（存在しないパス→exit 1、ファイルパス→エラー）。マルチバイトファイル名対応。単体テスト10件（walkDir 7件+printTree 3件）+統合テスト8件、全18件PASS。
