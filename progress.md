@@ -188,3 +188,7 @@
 ## gf-jq Tier 3: select(条件)フィルタ・keys・values
 - 完了日: 2026-03-14
 - 作業内容: `keys`組み込み関数追加（オブジェクト→ソート済みキー配列、配列→インデックス配列）。`values`組み込み関数追加（オブジェクト→キーソート順の値配列、配列→そのまま）。`select(条件)`フィルタ追加。比較演算子（`==`/`!=`/`>`/`<`/`>=`/`<=`）による数値・文字列・null比較、演算子なしのtruthiness判定（null/falseを除外）に対応。`parseSelectCondition`で条件式パース、`evalSelect`で条件評価、`compareValues`で型別比較。`splitPipeline`関数で括弧内の`|`を保護するパイプ分割に改良。ネストされたキーアクセス・マルチバイト文字列・selectの後続パイプラインとの組み合わせも全て動作。テスト39件追加（Keys 6件、KeysErrors 3件、Values 4件、ValuesErrors 2件、Select 15件、SelectErrors 2件、ParseFilterTier3 7件）、累計114件ALL PASS。
+
+## gf-hexdump Tier 1: 16進ダンプ表示・stdin対応
+- 完了日: 2026-03-14
+- 作業内容: cmd/gf-hexdump/ 作成（go.mod初期化、go.workに追加）。16バイトずつの16進ダンプ表示（`%08x`オフセット＋hex bytes＋ASCII表示）。`io.ReadFull`で16バイトずつ読み取り、`formatLine`関数でオフセット・16進バイト（8バイトずつグループ化）・ASCII表示（非印字文字は`.`）を1行に出力。stdin対応（引数なし・ハイフン）、複数ファイル対応、--version表示、エラーハンドリング（存在しないファイル→exit 1、不正フラグ→exit 2）。単体テスト5件（formatLine）+7件（hexdump）+9件（run）+2件（境界テスト）、全23件PASS。

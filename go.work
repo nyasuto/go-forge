@@ -16,4 +16,5 @@ use (
 	./cmd/gf-diff
 	./cmd/gf-tree
 	./cmd/gf-jq
+	./cmd/gf-hexdump
 )
