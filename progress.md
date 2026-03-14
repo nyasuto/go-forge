@@ -192,3 +192,7 @@
 ## gf-hexdump Tier 1: 16進ダンプ表示・stdin対応
 - 完了日: 2026-03-14
 - 作業内容: cmd/gf-hexdump/ 作成（go.mod初期化、go.workに追加）。16バイトずつの16進ダンプ表示（`%08x`オフセット＋hex bytes＋ASCII表示）。`io.ReadFull`で16バイトずつ読み取り、`formatLine`関数でオフセット・16進バイト（8バイトずつグループ化）・ASCII表示（非印字文字は`.`）を1行に出力。stdin対応（引数なし・ハイフン）、複数ファイル対応、--version表示、エラーハンドリング（存在しないファイル→exit 1、不正フラグ→exit 2）。単体テスト5件（formatLine）+7件（hexdump）+9件（run）+2件（境界テスト）、全23件PASS。
+
+## gf-hexdump Tier 2: -s オフセット指定・-n バイト数制限
+- 完了日: 2026-03-14
+- 作業内容: `-s`オフセット指定オプション追加（`io.Seeker`対応時はSeek、非対応時は`io.CopyN`でスキップ）。`-n`バイト数制限オプション追加（`io.LimitReader`で読み取りバイト数を制限）。`hexdumpOptions`構造体でオプション管理。skip後のオフセット表示は実際のファイル位置を反映。負値バリデーション（-s負値→exit 2、-n負値→exit 2）。ファイル・stdinの両方で動作。単体テスト10件（skip 4件+limit 4件+組み合わせ2件）+統合テスト7件追加、累計40件ALL PASS。

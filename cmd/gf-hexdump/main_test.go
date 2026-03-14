@@ -113,7 +113,7 @@ func TestHexdump(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			code := hexdump(bytes.NewReader(tt.input), &stdout, &stderr)
+			code := hexdump(bytes.NewReader(tt.input), &stdout, &stderr, hexdumpOptions{limit: -1})
 			if code != tt.wantCode {
 				t.Errorf("hexdump() code = %d, want %d", code, tt.wantCode)
 			}
@@ -225,11 +225,268 @@ func TestRun(t *testing.T) {
 	}
 }
 
+func TestHexdumpSkip(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		opts     hexdumpOptions
+		wantCode int
+		contains []string
+		notContains []string
+	}{
+		{
+			name:     "skip 4 bytes",
+			input:    []byte("ABCDhello"),
+			opts:     hexdumpOptions{skip: 4, limit: -1},
+			wantCode: 0,
+			contains: []string{"00000004", "68 65 6c 6c 6f", "|hello|"},
+			notContains: []string{"41 42 43 44"},
+		},
+		{
+			name:     "skip past end",
+			input:    []byte("short"),
+			opts:     hexdumpOptions{skip: 100, limit: -1},
+			wantCode: 0,
+		},
+		{
+			name:     "skip 0 is noop",
+			input:    []byte("AB"),
+			opts:     hexdumpOptions{skip: 0, limit: -1},
+			wantCode: 0,
+			contains: []string{"00000000", "41 42"},
+		},
+		{
+			name:     "skip 16 to second line",
+			input:    []byte("0123456789ABCDEFsecond"),
+			opts:     hexdumpOptions{skip: 16, limit: -1},
+			wantCode: 0,
+			contains: []string{"00000010", "|second|"},
+			notContains: []string{"00000000"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := hexdump(bytes.NewReader(tt.input), &stdout, &stderr, tt.opts)
+			if code != tt.wantCode {
+				t.Errorf("hexdump() code = %d, want %d", code, tt.wantCode)
+			}
+			for _, s := range tt.contains {
+				if !strings.Contains(stdout.String(), s) {
+					t.Errorf("output missing %q\ngot:\n%s", s, stdout.String())
+				}
+			}
+			for _, s := range tt.notContains {
+				if strings.Contains(stdout.String(), s) {
+					t.Errorf("output should not contain %q\ngot:\n%s", s, stdout.String())
+				}
+			}
+		})
+	}
+}
+
+func TestHexdumpLimit(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		opts     hexdumpOptions
+		wantCode int
+		contains []string
+		notContains []string
+	}{
+		{
+			name:     "limit 5 bytes",
+			input:    []byte("Hello, World!"),
+			opts:     hexdumpOptions{limit: 5},
+			wantCode: 0,
+			contains: []string{"48 65 6c 6c 6f", "|Hello|"},
+			notContains: []string{"2c"},
+		},
+		{
+			name:     "limit 0 bytes",
+			input:    []byte("Hello"),
+			opts:     hexdumpOptions{limit: 0},
+			wantCode: 0,
+		},
+		{
+			name:     "limit larger than input",
+			input:    []byte("Hi"),
+			opts:     hexdumpOptions{limit: 100},
+			wantCode: 0,
+			contains: []string{"48 69", "|Hi|"},
+		},
+		{
+			name:     "limit exactly 16",
+			input:    []byte("0123456789ABCDEFGHIJ"),
+			opts:     hexdumpOptions{limit: 16},
+			wantCode: 0,
+			contains: []string{"|0123456789ABCDEF|"},
+			notContains: []string{"47 48"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := hexdump(bytes.NewReader(tt.input), &stdout, &stderr, tt.opts)
+			if code != tt.wantCode {
+				t.Errorf("hexdump() code = %d, want %d", code, tt.wantCode)
+			}
+			for _, s := range tt.contains {
+				if !strings.Contains(stdout.String(), s) {
+					t.Errorf("output missing %q\ngot:\n%s", s, stdout.String())
+				}
+			}
+			for _, s := range tt.notContains {
+				if strings.Contains(stdout.String(), s) {
+					t.Errorf("output should not contain %q\ngot:\n%s", s, stdout.String())
+				}
+			}
+		})
+	}
+}
+
+func TestHexdumpSkipAndLimit(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		opts     hexdumpOptions
+		wantCode int
+		contains []string
+		notContains []string
+	}{
+		{
+			name:     "skip 5 limit 5",
+			input:    []byte("Hello, World!"),
+			opts:     hexdumpOptions{skip: 5, limit: 5},
+			wantCode: 0,
+			contains: []string{"00000005", "2c 20 57 6f 72", "|, Wor|"},
+			notContains: []string{"48 65 6c"},
+		},
+		{
+			name:     "skip and limit to single byte",
+			input:    []byte("ABCDE"),
+			opts:     hexdumpOptions{skip: 2, limit: 1},
+			wantCode: 0,
+			contains: []string{"00000002", "43", "|C|"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := hexdump(bytes.NewReader(tt.input), &stdout, &stderr, tt.opts)
+			if code != tt.wantCode {
+				t.Errorf("hexdump() code = %d, want %d", code, tt.wantCode)
+			}
+			for _, s := range tt.contains {
+				if !strings.Contains(stdout.String(), s) {
+					t.Errorf("output missing %q\ngot:\n%s", s, stdout.String())
+				}
+			}
+			for _, s := range tt.notContains {
+				if strings.Contains(stdout.String(), s) {
+					t.Errorf("output should not contain %q\ngot:\n%s", s, stdout.String())
+				}
+			}
+		})
+	}
+}
+
+func TestRunWithSkipAndLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	file1 := filepath.Join(tmpDir, "test.bin")
+	os.WriteFile(file1, []byte("Hello, World! This is a test."), 0644)
+
+	tests := []struct {
+		name     string
+		args     []string
+		stdin    string
+		wantCode int
+		contains []string
+		notContains []string
+		errMsg   string
+	}{
+		{
+			name:     "skip flag with file",
+			args:     []string{"-s", "7", file1},
+			wantCode: 0,
+			contains: []string{"00000007", "57 6f 72 6c 64"},
+		},
+		{
+			name:     "limit flag with file",
+			args:     []string{"-n", "5", file1},
+			wantCode: 0,
+			contains: []string{"48 65 6c 6c 6f", "|Hello|"},
+		},
+		{
+			name:     "skip and limit with file",
+			args:     []string{"-s", "7", "-n", "5", file1},
+			wantCode: 0,
+			contains: []string{"00000007", "|World|"},
+		},
+		{
+			name:     "skip with stdin",
+			args:     []string{"-s", "3"},
+			stdin:    "ABCDhello",
+			wantCode: 0,
+			contains: []string{"00000003", "|Dhello|"},
+		},
+		{
+			name:     "limit with stdin",
+			args:     []string{"-n", "3"},
+			stdin:    "ABCDhello",
+			wantCode: 0,
+			contains: []string{"|ABC|"},
+			notContains: []string{"44"},
+		},
+		{
+			name:     "negative skip",
+			args:     []string{"-s", "-1"},
+			wantCode: 2,
+			errMsg:   "invalid skip value",
+		},
+		{
+			name:     "negative limit",
+			args:     []string{"-n", "-2"},
+			wantCode: 2,
+			errMsg:   "invalid length value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			stdin := strings.NewReader(tt.stdin)
+			code := run(tt.args, stdin, &stdout, &stderr)
+			if code != tt.wantCode {
+				t.Errorf("run() code = %d, want %d\nstderr: %s\nstdout: %s", code, tt.wantCode, stderr.String(), stdout.String())
+			}
+			for _, s := range tt.contains {
+				if !strings.Contains(stdout.String(), s) {
+					t.Errorf("stdout missing %q\ngot:\n%s", s, stdout.String())
+				}
+			}
+			for _, s := range tt.notContains {
+				if strings.Contains(stdout.String(), s) {
+					t.Errorf("stdout should not contain %q\ngot:\n%s", s, stdout.String())
+				}
+			}
+			if tt.errMsg != "" {
+				if !strings.Contains(stderr.String(), tt.errMsg) {
+					t.Errorf("stderr missing %q\ngot: %s", tt.errMsg, stderr.String())
+				}
+			}
+		})
+	}
+}
+
 func TestHexdumpExactly16Bytes(t *testing.T) {
 	// Verify that exactly 16 bytes produces one line with correct format
 	input := []byte("0123456789abcdef")
 	var stdout, stderr bytes.Buffer
-	code := hexdump(bytes.NewReader(input), &stdout, &stderr)
+	code := hexdump(bytes.NewReader(input), &stdout, &stderr, hexdumpOptions{limit: -1})
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -243,7 +500,7 @@ func TestHexdump17Bytes(t *testing.T) {
 	// 17 bytes should produce exactly 2 lines
 	input := bytes.Repeat([]byte{0x41}, 17)
 	var stdout, stderr bytes.Buffer
-	code := hexdump(bytes.NewReader(input), &stdout, &stderr)
+	code := hexdump(bytes.NewReader(input), &stdout, &stderr, hexdumpOptions{limit: -1})
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
