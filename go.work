@@ -15,4 +15,5 @@ use (
 	./cmd/gf-xargs
 	./cmd/gf-diff
 	./cmd/gf-tree
+	./cmd/gf-jq
 )
