@@ -433,6 +433,180 @@ func TestIsExcluded(t *testing.T) {
 	}
 }
 
+// --- Unit tests for formatSize ---
+
+func TestFormatSize(t *testing.T) {
+	tests := []struct {
+		name  string
+		bytes int64
+		want  string
+	}{
+		{"zero bytes", 0, "    0"},
+		{"small bytes", 42, "   42"},
+		{"1023 bytes", 1023, " 1023"},
+		{"1 KB", 1024, " 1.0K"},
+		{"1.5 KB", 1536, " 1.5K"},
+		{"1 MB", 1024 * 1024, " 1.0M"},
+		{"2.5 MB", int64(2.5 * 1024 * 1024), " 2.5M"},
+		{"1 GB", 1024 * 1024 * 1024, " 1.0G"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatSize(tt.bytes)
+			if got != tt.want {
+				t.Errorf("formatSize(%d) = %q, want %q", tt.bytes, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- Unit tests for -s file size display ---
+
+func TestWalkDirWithSize(t *testing.T) {
+	tests := []struct {
+		name      string
+		opts      treeOptions
+		wantLines []string
+		notWant   []string
+	}{
+		{
+			name: "show file sizes with -s",
+			opts: treeOptions{showSize: true},
+			wantLines: []string{
+				"[    5]  file1.txt", // "hello" = 5 bytes
+				"[    5]  file2.txt", // "world" = 5 bytes
+				"[   12]  a.go",      // "package main" = 12 bytes
+				"[    4]  deep.txt",  // "deep" = 4 bytes
+				"[    4]  b.txt",     // "data" = 4 bytes
+			},
+		},
+		{
+			name:    "no sizes without -s",
+			opts:    treeOptions{},
+			notWant: []string{"["},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := createTestTree(t)
+
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			_, err := walkDir(root, "", 1, tt.opts)
+
+			w.Close()
+			os.Stdout = old
+
+			var buf bytes.Buffer
+			buf.ReadFrom(r)
+			output := buf.String()
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			for _, line := range tt.wantLines {
+				if !strings.Contains(output, line) {
+					t.Errorf("output missing expected %q\nfull output:\n%s", line, output)
+				}
+			}
+			for _, line := range tt.notWant {
+				if strings.Contains(output, line) {
+					t.Errorf("output should NOT contain %q\nfull output:\n%s", line, output)
+				}
+			}
+		})
+	}
+}
+
+// --- Unit tests for --du directory size ---
+
+func TestWalkDirWithDu(t *testing.T) {
+	tests := []struct {
+		name      string
+		opts      treeOptions
+		wantLines []string
+	}{
+		{
+			name: "du shows dir and file sizes",
+			opts: treeOptions{du: true},
+			wantLines: []string{
+				"[   16]  dir1",  // a.go(12) + deep.txt(4) = 16
+				"[    4]  dir2",  // b.txt(4) = 4
+				"[    5]  file1.txt",
+				"[    5]  file2.txt",
+			},
+		},
+		{
+			name: "du with depth limit",
+			opts: treeOptions{du: true, maxDepth: 1},
+			wantLines: []string{
+				"[   16]  dir1",
+				"[    4]  dir2",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := createTestTree(t)
+
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			_, err := walkDir(root, "", 1, tt.opts)
+
+			w.Close()
+			os.Stdout = old
+
+			var buf bytes.Buffer
+			buf.ReadFrom(r)
+			output := buf.String()
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			for _, line := range tt.wantLines {
+				if !strings.Contains(output, line) {
+					t.Errorf("output missing expected %q\nfull output:\n%s", line, output)
+				}
+			}
+		})
+	}
+}
+
+// --- Unit tests for calcDirSize ---
+
+func TestCalcDirSize(t *testing.T) {
+	root := createTestTree(t)
+	opts := treeOptions{}
+
+	// Total: hello(5) + world(5) + package main(12) + deep(4) + data(4) = 30
+	total := calcDirSize(root, opts)
+	if total != 30 {
+		t.Errorf("calcDirSize = %d, want 30", total)
+	}
+
+	// dir1 only: a.go(12) + deep.txt(4) = 16
+	dir1Size := calcDirSize(filepath.Join(root, "dir1"), opts)
+	if dir1Size != 16 {
+		t.Errorf("calcDirSize(dir1) = %d, want 16", dir1Size)
+	}
+
+	// With exclude
+	optsExclude := treeOptions{exclude: "*.txt"}
+	sizeNoTxt := calcDirSize(root, optsExclude)
+	if sizeNoTxt != 12 { // only a.go
+		t.Errorf("calcDirSize with exclude *.txt = %d, want 12", sizeNoTxt)
+	}
+}
+
 // --- Integration tests ---
 
 func TestIntegration(t *testing.T) {
@@ -673,6 +847,100 @@ func TestIntegration(t *testing.T) {
 			}
 		}
 		_ = out
+	})
+
+	t.Run("-s shows file sizes", func(t *testing.T) {
+		root := createTestTree(t)
+		cmd := exec.Command(binary, "-s", root)
+		out, err := cmd.CombinedOutput()
+		output := string(out)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v\noutput: %s", err, output)
+		}
+
+		// Files should have size brackets
+		if !strings.Contains(output, "[    5]  file1.txt") {
+			t.Errorf("-s should show file sizes, got:\n%s", output)
+		}
+		// Directories should NOT have size brackets with -s only
+		if strings.Contains(output, "]  dir1") {
+			t.Errorf("-s should not show directory sizes, got:\n%s", output)
+		}
+	})
+
+	t.Run("--du shows directory and file sizes", func(t *testing.T) {
+		root := createTestTree(t)
+		cmd := exec.Command(binary, "--du", root)
+		out, err := cmd.CombinedOutput()
+		output := string(out)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v\noutput: %s", err, output)
+		}
+
+		// Root should have total size
+		if !strings.Contains(output, "[   30]") {
+			t.Errorf("--du should show root total size [   30], got:\n%s", output)
+		}
+		// Directories should have aggregated sizes
+		if !strings.Contains(output, "[   16]  dir1") {
+			t.Errorf("--du should show dir1 size [   16], got:\n%s", output)
+		}
+		if !strings.Contains(output, "[    4]  dir2") {
+			t.Errorf("--du should show dir2 size [    4], got:\n%s", output)
+		}
+	})
+
+	t.Run("--du with -L depth limit", func(t *testing.T) {
+		root := createTestTree(t)
+		cmd := exec.Command(binary, "--du", "-L", "1", root)
+		out, err := cmd.CombinedOutput()
+		output := string(out)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v\noutput: %s", err, output)
+		}
+
+		// Should still show correct aggregated sizes even with depth limit
+		if !strings.Contains(output, "[   16]  dir1") {
+			t.Errorf("--du -L 1 should aggregate dir1 size, got:\n%s", output)
+		}
+	})
+
+	t.Run("--du with -I exclude", func(t *testing.T) {
+		root := createTestTree(t)
+		cmd := exec.Command(binary, "--du", "-I", "*.txt", root)
+		out, err := cmd.CombinedOutput()
+		output := string(out)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v\noutput: %s", err, output)
+		}
+
+		// Should exclude .txt files from size calculation
+		if !strings.Contains(output, "[   12]  dir1") {
+			t.Errorf("--du -I '*.txt' should show dir1 size as 12 (only a.go), got:\n%s", output)
+		}
+	})
+
+	t.Run("-s with large file", func(t *testing.T) {
+		root := t.TempDir()
+		// Create a file larger than 1KB
+		data := make([]byte, 2048)
+		os.WriteFile(filepath.Join(root, "big.bin"), data, 0644)
+
+		cmd := exec.Command(binary, "-s", root)
+		out, err := cmd.CombinedOutput()
+		output := string(out)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v\noutput: %s", err, output)
+		}
+
+		if !strings.Contains(output, " 2.0K") {
+			t.Errorf("-s should show human-readable size for large file, got:\n%s", output)
+		}
 	})
 
 	t.Run("tree structure ordering", func(t *testing.T) {

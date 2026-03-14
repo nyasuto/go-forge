@@ -11,8 +11,12 @@
 | 単体テスト (walkDir -L 深さ制限) | 4 | ALL PASS |
 | 単体テスト (walkDir -I 除外パターン) | 5 | ALL PASS |
 | 単体テスト (isExcluded) | 5 | ALL PASS |
-| 統合テスト | 14 | ALL PASS |
-| **合計** | **38** | **ALL PASS** |
+| 単体テスト (formatSize) | 8 | ALL PASS |
+| 単体テスト (walkDir -s サイズ表示) | 2 | ALL PASS |
+| 単体テスト (walkDir --du ディレクトリサイズ) | 2 | ALL PASS |
+| 単体テスト (calcDirSize) | 1 | ALL PASS |
+| 統合テスト | 19 | ALL PASS |
+| **合計** | **57** | **ALL PASS** |
 
 ## 単体テスト: walkDir
 
@@ -63,6 +67,39 @@
 | empty_pattern | 空パターン→除外なし | PASS |
 | exact_match | 完全一致 | PASS |
 
+## 単体テスト: formatSize
+
+| テスト名 | 内容 | 結果 |
+|----------|------|------|
+| zero_bytes | 0バイト表示 | PASS |
+| small_bytes | 42バイト表示 | PASS |
+| 1023_bytes | 1023バイト表示 | PASS |
+| 1_KB | 1024バイト→1.0K | PASS |
+| 1.5_KB | 1536バイト→1.5K | PASS |
+| 1_MB | 1MB→1.0M | PASS |
+| 2.5_MB | 2.5MB→2.5M | PASS |
+| 1_GB | 1GB→1.0G | PASS |
+
+## 単体テスト: walkDir -s サイズ表示
+
+| テスト名 | 内容 | 結果 |
+|----------|------|------|
+| show_file_sizes_with_-s | -sでファイルサイズ表示 | PASS |
+| no_sizes_without_-s | -s未指定でサイズ非表示 | PASS |
+
+## 単体テスト: walkDir --du ディレクトリサイズ
+
+| テスト名 | 内容 | 結果 |
+|----------|------|------|
+| du_shows_dir_and_file_sizes | --duでディレクトリ・ファイルサイズ表示 | PASS |
+| du_with_depth_limit | --duと-Lの組み合わせ | PASS |
+
+## 単体テスト: calcDirSize
+
+| テスト名 | 内容 | 結果 |
+|----------|------|------|
+| calcDirSize | ディレクトリサイズ計算（全体・サブディレクトリ・除外付き） | PASS |
+
 ## 統合テスト
 
 | テスト名 | 内容 | 結果 |
@@ -80,4 +117,9 @@
 | -I_exclude_directory | -I dir1でディレクトリ除外 | PASS |
 | -L_and_-I_combined | -Lと-Iの組み合わせ | PASS |
 | -L_negative_value_exits_with_code_2 | -L負値→exit 2 | PASS |
+| -s_shows_file_sizes | -sでファイルサイズ表示 | PASS |
+| --du_shows_directory_and_file_sizes | --duでディレクトリ・ファイルサイズ表示 | PASS |
+| --du_with_-L_depth_limit | --duと-Lの組み合わせ | PASS |
+| --du_with_-I_exclude | --duと-Iの組み合わせ | PASS |
+| -s_with_large_file | -sで1KB超ファイルの人間可読表示 | PASS |
 | tree_structure_ordering | アルファベット順出力 | PASS |

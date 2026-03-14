@@ -314,7 +314,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 - [x] Tier 1: `cmd/gf-tree/` 作成（go.mod初期化、go.workに追加）。再帰的ディレクトリツリー描画（罫線文字使用）。テスト作成・通過。テスト結果を `docs/test-results/gf-tree.md` に記録。
 - [x] Tier 2: `-L` 深さ制限、`-I` 除外パターン。テスト追加・通過。テスト結果を更新。
-- [ ] Tier 3: ファイルサイズ表示、`--du` ディレクトリサイズ集計。テスト追加・通過。テスト結果を更新。
+- [x] Tier 3: ファイルサイズ表示、`--du` ディレクトリサイズ集計。テスト追加・通過。テスト結果を更新。
 
 #### gf-jq（JSONプロセッサ）
 
