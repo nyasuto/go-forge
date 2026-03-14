@@ -155,3 +155,69 @@
 ### 小計: 30件追加
 
 ### 累計: 75件 ALL PASS
+
+---
+
+## Tier 3: `select(条件)` フィルタ・`keys`・`values`
+
+- 実行日: 2026-03-14
+- 結果: ALL PASS
+
+### テスト内訳
+
+#### TestKeys (6件)
+- keys of object（ソート済みキー配列）
+- keys of empty object
+- keys of array（インデックス配列）
+- keys of empty array
+- keys via pipe
+- keys with multibyte keys
+
+#### TestKeysErrors (3件)
+- keys of null → error
+- keys of string → error
+- keys of number → error
+
+#### TestValues (4件)
+- values of object sorted by key
+- values of empty object
+- values of array
+- values via pipe
+
+#### TestValuesErrors (2件)
+- values of null → error
+- values of string → error
+
+#### TestSelect (15件)
+- select equal number (`select(.age == 30)`)
+- select greater than (`select(.v > 2)`)
+- select less than (`select(.v < 4)`)
+- select greater equal (`select(.v >= 2)`)
+- select less equal (`select(.v <= 2)`)
+- select not equal (`select(.v != 2)`)
+- select string equal (`select(.name == "alice")`)
+- select truthiness true（`.active`がtrueの要素のみ）
+- select truthiness null excluded（null値を除外）
+- select none match（マッチなし→出力なし）
+- select all match（全マッチ→全出力）
+- select with nested key（ネストされたキーでフィルタ）
+- select null comparison（`select(.v == null)`)
+- select then access key（selectの後にキーアクセス）
+- select with multibyte string（日本語文字列比較）
+
+#### TestSelectErrors (2件)
+- empty select → parse error
+- invalid value in select → parse error
+
+#### TestParseFilterTier3 (7件)
+- keys function
+- values function
+- pipe to keys
+- pipe to values
+- select basic
+- select with pipe
+- empty select error
+
+### 小計: 39件追加
+
+### 累計: 114件 ALL PASS

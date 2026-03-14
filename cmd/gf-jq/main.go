@@ -79,18 +79,26 @@ const (
 	tokenIndex                     // .[N]
 	tokenDot                       // . (identity)
 	tokenIterator                  // .[]
-	tokenFunc                      // length
+	tokenFunc                      // length, keys, values
+	tokenSelect                    // select(condition)
 )
+
+type selectCond struct {
+	filter []token // left side filter path
+	op     string  // comparison operator ("==", "!=", ">", "<", ">=", "<="), "" for truthiness
+	value  any     // right side literal value
+}
 
 type token struct {
 	typ   tokenType
 	key   string
 	index int
+	cond  *selectCond // for tokenSelect
 }
 
 // parseFilter parses a filter expression into a pipeline of stages separated by |
 func parseFilter(filter string) ([][]token, error) {
-	parts := strings.Split(filter, "|")
+	parts := splitPipeline(filter)
 	var stages [][]token
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
@@ -109,6 +117,39 @@ func parseFilter(filter string) ([][]token, error) {
 	return stages, nil
 }
 
+// splitPipeline splits a filter by | but respects parentheses and quoted strings
+func splitPipeline(filter string) []string {
+	var parts []string
+	depth := 0
+	inString := false
+	start := 0
+	for i := 0; i < len(filter); i++ {
+		ch := filter[i]
+		if ch == '"' && !inString {
+			inString = true
+			continue
+		}
+		if inString {
+			if ch == '\\' {
+				i++
+			} else if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+		if ch == '(' {
+			depth++
+		} else if ch == ')' {
+			depth--
+		} else if ch == '|' && depth == 0 {
+			parts = append(parts, filter[start:i])
+			start = i + 1
+		}
+	}
+	parts = append(parts, filter[start:])
+	return parts
+}
+
 // parseFilterStage parses a single pipeline stage
 func parseFilterStage(stage string) ([]token, error) {
 	if stage == "." {
@@ -116,8 +157,19 @@ func parseFilterStage(stage string) ([]token, error) {
 	}
 
 	// Check for bare function names
-	if stage == "length" {
-		return []token{{typ: tokenFunc, key: "length"}}, nil
+	switch stage {
+	case "length", "keys", "values":
+		return []token{{typ: tokenFunc, key: stage}}, nil
+	}
+
+	// Check for select(...)
+	if strings.HasPrefix(stage, "select(") && strings.HasSuffix(stage, ")") {
+		condStr := stage[7 : len(stage)-1]
+		cond, err := parseSelectCondition(condStr)
+		if err != nil {
+			return nil, err
+		}
+		return []token{{typ: tokenSelect, cond: cond}}, nil
 	}
 
 	if !strings.HasPrefix(stage, ".") {
@@ -187,6 +239,64 @@ func indexOfAny(s, chars string) int {
 			}
 		}
 		i += size
+	}
+	return -1
+}
+
+// parseSelectCondition parses the content inside select(...)
+func parseSelectCondition(s string) (*selectCond, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, fmt.Errorf("select: empty condition")
+	}
+
+	// Try to find comparison operator (check two-char operators first)
+	operators := []string{"==", "!=", ">=", "<=", ">", "<"}
+	for _, op := range operators {
+		idx := findOperator(s, op)
+		if idx >= 0 {
+			left := strings.TrimSpace(s[:idx])
+			right := strings.TrimSpace(s[idx+len(op):])
+
+			filterTokens, err := parseFilterStage(left)
+			if err != nil {
+				return nil, fmt.Errorf("select: invalid left side: %v", err)
+			}
+
+			var val any
+			if err := json.Unmarshal([]byte(right), &val); err != nil {
+				return nil, fmt.Errorf("select: invalid value %q: %v", right, err)
+			}
+
+			return &selectCond{filter: filterTokens, op: op, value: val}, nil
+		}
+	}
+
+	// No operator found: truthiness check
+	filterTokens, err := parseFilterStage(s)
+	if err != nil {
+		return nil, fmt.Errorf("select: invalid condition: %v", err)
+	}
+	return &selectCond{filter: filterTokens, op: "", value: nil}, nil
+}
+
+// findOperator finds operator position, skipping quoted strings
+func findOperator(s, op string) int {
+	inString := false
+	for i := 0; i < len(s); i++ {
+		if s[i] == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			if s[i] == '\\' {
+				i++ // skip escaped char
+			}
+			continue
+		}
+		if i+len(op) <= len(s) && s[i:i+len(op)] == op {
+			return i
+		}
 	}
 	return -1
 }
@@ -289,6 +399,14 @@ func applyStage(data any, tokens []token) ([]any, error) {
 					return nil, err
 				}
 				next = append(next, val)
+			case tokenSelect:
+				keep, err := evalSelect(tok.cond, current)
+				if err != nil {
+					return nil, err
+				}
+				if keep {
+					next = append(next, current)
+				}
 			}
 		}
 		results = next
@@ -318,8 +436,189 @@ func applyFunc(name string, data any) (any, error) {
 		default:
 			return nil, fmt.Errorf("cannot get length of %T", data)
 		}
+	case "keys":
+		switch v := data.(type) {
+		case map[string]any:
+			keys := make([]string, 0, len(v))
+			for k := range v {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			result := make([]any, len(keys))
+			for i, k := range keys {
+				result[i] = k
+			}
+			return result, nil
+		case []any:
+			result := make([]any, len(v))
+			for i := range v {
+				result[i] = float64(i)
+			}
+			return result, nil
+		default:
+			if data == nil {
+				return nil, fmt.Errorf("cannot get keys of null")
+			}
+			return nil, fmt.Errorf("cannot get keys of %T", data)
+		}
+	case "values":
+		switch v := data.(type) {
+		case map[string]any:
+			keys := make([]string, 0, len(v))
+			for k := range v {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			result := make([]any, len(keys))
+			for i, k := range keys {
+				result[i] = v[k]
+			}
+			return result, nil
+		case []any:
+			// values of an array is the array itself
+			return v, nil
+		default:
+			if data == nil {
+				return nil, fmt.Errorf("cannot get values of null")
+			}
+			return nil, fmt.Errorf("cannot get values of %T", data)
+		}
 	default:
 		return nil, fmt.Errorf("unknown function: %s", name)
+	}
+}
+
+// evalSelect evaluates a select condition against a value
+func evalSelect(cond *selectCond, data any) (bool, error) {
+	// Apply the filter to get the left side value
+	results, err := applyStage(data, cond.filter)
+	if err != nil {
+		return false, err
+	}
+
+	if len(results) == 0 {
+		return false, nil
+	}
+
+	val := results[0]
+
+	// Truthiness check (no operator)
+	if cond.op == "" {
+		return isTruthy(val), nil
+	}
+
+	// Comparison
+	return compareValues(val, cond.op, cond.value)
+}
+
+// isTruthy returns true if the value is truthy (not null and not false)
+func isTruthy(v any) bool {
+	if v == nil {
+		return false
+	}
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return true
+}
+
+// compareValues compares two values with the given operator
+func compareValues(left any, op string, right any) (bool, error) {
+	// Handle null comparisons
+	if left == nil && right == nil {
+		switch op {
+		case "==":
+			return true, nil
+		case "!=":
+			return false, nil
+		default:
+			return false, nil
+		}
+	}
+	if left == nil || right == nil {
+		switch op {
+		case "==":
+			return false, nil
+		case "!=":
+			return true, nil
+		default:
+			return false, nil
+		}
+	}
+
+	// Numeric comparison
+	lNum, lOk := toFloat64(left)
+	rNum, rOk := toFloat64(right)
+	if lOk && rOk {
+		switch op {
+		case "==":
+			return lNum == rNum, nil
+		case "!=":
+			return lNum != rNum, nil
+		case ">":
+			return lNum > rNum, nil
+		case "<":
+			return lNum < rNum, nil
+		case ">=":
+			return lNum >= rNum, nil
+		case "<=":
+			return lNum <= rNum, nil
+		}
+	}
+
+	// String comparison
+	lStr, lSok := left.(string)
+	rStr, rSok := right.(string)
+	if lSok && rSok {
+		switch op {
+		case "==":
+			return lStr == rStr, nil
+		case "!=":
+			return lStr != rStr, nil
+		case ">":
+			return lStr > rStr, nil
+		case "<":
+			return lStr < rStr, nil
+		case ">=":
+			return lStr >= rStr, nil
+		case "<=":
+			return lStr <= rStr, nil
+		}
+	}
+
+	// Bool comparison (== and != only)
+	lBool, lBok := left.(bool)
+	rBool, rBok := right.(bool)
+	if lBok && rBok {
+		switch op {
+		case "==":
+			return lBool == rBool, nil
+		case "!=":
+			return lBool != rBool, nil
+		default:
+			return false, fmt.Errorf("cannot compare booleans with %s", op)
+		}
+	}
+
+	// Type mismatch
+	switch op {
+	case "==":
+		return false, nil
+	case "!=":
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+func toFloat64(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	default:
+		return 0, false
 	}
 }
 

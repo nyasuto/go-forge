@@ -715,6 +715,322 @@ func TestUnknownFunction(t *testing.T) {
 	}
 }
 
+func TestKeys(t *testing.T) {
+	tests := []struct {
+		name   string
+		json   string
+		filter string
+		want   string
+	}{
+		{
+			name:   "keys of object",
+			json:   `{"b":2,"a":1,"c":3}`,
+			filter: "keys",
+			want:   "[\n  \"a\",\n  \"b\",\n  \"c\"\n]\n",
+		},
+		{
+			name:   "keys of empty object",
+			json:   `{}`,
+			filter: "keys",
+			want:   "[]\n",
+		},
+		{
+			name:   "keys of array",
+			json:   `["x","y","z"]`,
+			filter: "keys",
+			want:   "[\n  0,\n  1,\n  2\n]\n",
+		},
+		{
+			name:   "keys of empty array",
+			json:   `[]`,
+			filter: "keys",
+			want:   "[]\n",
+		},
+		{
+			name:   "keys via pipe",
+			json:   `{"data":{"x":1,"y":2}}`,
+			filter: ".data | keys",
+			want:   "[\n  \"x\",\n  \"y\"\n]\n",
+		},
+		{
+			name:   "keys with multibyte keys",
+			json:   `{"名前":"太郎","年齢":25}`,
+			filter: "keys",
+			want:   "[\n  \"名前\",\n  \"年齢\"\n]\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := processReader(strings.NewReader(tt.json), mustParseFilter(t, tt.filter), &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("exit code %d, stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != tt.want {
+				t.Errorf("got %q, want %q", stdout.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestKeysErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		json   string
+		filter string
+	}{
+		{name: "keys of null", json: `null`, filter: "keys"},
+		{name: "keys of string", json: `"hello"`, filter: "keys"},
+		{name: "keys of number", json: `42`, filter: "keys"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := processReader(strings.NewReader(tt.json), mustParseFilter(t, tt.filter), &stdout, &stderr)
+			if code != 1 {
+				t.Errorf("expected exit code 1, got %d", code)
+			}
+		})
+	}
+}
+
+func TestValues(t *testing.T) {
+	tests := []struct {
+		name   string
+		json   string
+		filter string
+		want   string
+	}{
+		{
+			name:   "values of object sorted by key",
+			json:   `{"b":2,"a":1,"c":3}`,
+			filter: "values",
+			want:   "[\n  1,\n  2,\n  3\n]\n",
+		},
+		{
+			name:   "values of empty object",
+			json:   `{}`,
+			filter: "values",
+			want:   "[]\n",
+		},
+		{
+			name:   "values of array",
+			json:   `[10,20,30]`,
+			filter: "values",
+			want:   "[\n  10,\n  20,\n  30\n]\n",
+		},
+		{
+			name:   "values via pipe",
+			json:   `{"data":{"x":1,"y":2}}`,
+			filter: ".data | values",
+			want:   "[\n  1,\n  2\n]\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := processReader(strings.NewReader(tt.json), mustParseFilter(t, tt.filter), &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("exit code %d, stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != tt.want {
+				t.Errorf("got %q, want %q", stdout.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestValuesErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		json   string
+		filter string
+	}{
+		{name: "values of null", json: `null`, filter: "values"},
+		{name: "values of string", json: `"hello"`, filter: "values"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := processReader(strings.NewReader(tt.json), mustParseFilter(t, tt.filter), &stdout, &stderr)
+			if code != 1 {
+				t.Errorf("expected exit code 1, got %d", code)
+			}
+		})
+	}
+}
+
+func TestSelect(t *testing.T) {
+	tests := []struct {
+		name   string
+		json   string
+		filter string
+		want   string
+	}{
+		{
+			name:   "select equal number",
+			json:   `[{"name":"alice","age":30},{"name":"bob","age":25}]`,
+			filter: `.[] | select(.age == 30)`,
+			want:   "{\n  \"age\": 30,\n  \"name\": \"alice\"\n}\n",
+		},
+		{
+			name:   "select greater than",
+			json:   `[{"v":1},{"v":5},{"v":3}]`,
+			filter: `.[] | select(.v > 2)`,
+			want:   "{\n  \"v\": 5\n}\n{\n  \"v\": 3\n}\n",
+		},
+		{
+			name:   "select less than",
+			json:   `[{"v":1},{"v":5},{"v":3}]`,
+			filter: `.[] | select(.v < 4)`,
+			want:   "{\n  \"v\": 1\n}\n{\n  \"v\": 3\n}\n",
+		},
+		{
+			name:   "select greater equal",
+			json:   `[{"v":1},{"v":2},{"v":3}]`,
+			filter: `.[] | select(.v >= 2)`,
+			want:   "{\n  \"v\": 2\n}\n{\n  \"v\": 3\n}\n",
+		},
+		{
+			name:   "select less equal",
+			json:   `[{"v":1},{"v":2},{"v":3}]`,
+			filter: `.[] | select(.v <= 2)`,
+			want:   "{\n  \"v\": 1\n}\n{\n  \"v\": 2\n}\n",
+		},
+		{
+			name:   "select not equal",
+			json:   `[{"v":1},{"v":2},{"v":3}]`,
+			filter: `.[] | select(.v != 2)`,
+			want:   "{\n  \"v\": 1\n}\n{\n  \"v\": 3\n}\n",
+		},
+		{
+			name:   "select string equal",
+			json:   `[{"name":"alice"},{"name":"bob"},{"name":"alice"}]`,
+			filter: `.[] | select(.name == "alice")`,
+			want:   "{\n  \"name\": \"alice\"\n}\n{\n  \"name\": \"alice\"\n}\n",
+		},
+		{
+			name:   "select truthiness true",
+			json:   `[{"active":true,"name":"a"},{"active":false,"name":"b"},{"active":true,"name":"c"}]`,
+			filter: `.[] | select(.active)`,
+			want:   "{\n  \"active\": true,\n  \"name\": \"a\"\n}\n{\n  \"active\": true,\n  \"name\": \"c\"\n}\n",
+		},
+		{
+			name:   "select truthiness null excluded",
+			json:   `[{"v":1},{"v":null},{"v":3}]`,
+			filter: `.[] | select(.v)`,
+			want:   "{\n  \"v\": 1\n}\n{\n  \"v\": 3\n}\n",
+		},
+		{
+			name:   "select none match",
+			json:   `[{"v":1},{"v":2}]`,
+			filter: `.[] | select(.v > 10)`,
+			want:   "",
+		},
+		{
+			name:   "select all match",
+			json:   `[{"v":5},{"v":10}]`,
+			filter: `.[] | select(.v > 0)`,
+			want:   "{\n  \"v\": 5\n}\n{\n  \"v\": 10\n}\n",
+		},
+		{
+			name:   "select with nested key",
+			json:   `[{"user":{"role":"admin"}},{"user":{"role":"guest"}}]`,
+			filter: `.[] | select(.user.role == "admin")`,
+			want:   "{\n  \"user\": {\n    \"role\": \"admin\"\n  }\n}\n",
+		},
+		{
+			name:   "select null comparison",
+			json:   `[{"v":null},{"v":1}]`,
+			filter: `.[] | select(.v == null)`,
+			want:   "{\n  \"v\": null\n}\n",
+		},
+		{
+			name:   "select then access key",
+			json:   `[{"name":"alice","age":30},{"name":"bob","age":25}]`,
+			filter: `.[] | select(.age > 28) | .name`,
+			want:   "\"alice\"\n",
+		},
+		{
+			name:   "select with multibyte string",
+			json:   `[{"名前":"太郎"},{"名前":"花子"}]`,
+			filter: `.[] | select(.名前 == "太郎")`,
+			want:   "{\n  \"名前\": \"太郎\"\n}\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := processReader(strings.NewReader(tt.json), mustParseFilter(t, tt.filter), &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("exit code %d, stderr: %s", code, stderr.String())
+			}
+			if stdout.String() != tt.want {
+				t.Errorf("got %q, want %q", stdout.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestSelectErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		filter string
+	}{
+		{name: "empty select", filter: "select()"},
+		{name: "invalid value in select", filter: `select(.x == abc)`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseFilter(tt.filter)
+			if err == nil {
+				t.Errorf("expected error for filter %q", tt.filter)
+			}
+		})
+	}
+}
+
+func TestParseFilterTier3(t *testing.T) {
+	tests := []struct {
+		name    string
+		filter  string
+		wantErr bool
+		stages  int
+	}{
+		{name: "keys function", filter: "keys", stages: 1},
+		{name: "values function", filter: "values", stages: 1},
+		{name: "pipe to keys", filter: ". | keys", stages: 2},
+		{name: "pipe to values", filter: ".data | values", stages: 2},
+		{name: "select basic", filter: `select(.age > 30)`, stages: 1},
+		{name: "select with pipe", filter: `.[] | select(.v == 1)`, stages: 2},
+		{name: "empty select error", filter: "select()", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stages, err := parseFilter(tt.filter)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error for filter %q", tt.filter)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(stages) != tt.stages {
+				t.Errorf("got %d stages, want %d", len(stages), tt.stages)
+			}
+		})
+	}
+}
+
 func mustParseFilter(t *testing.T, filter string) [][]token {
 	t.Helper()
 	stages, err := parseFilter(filter)

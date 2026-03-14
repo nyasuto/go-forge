@@ -184,3 +184,7 @@
 ## gf-jq Tier 2: パイプ・配列操作・length
 - 完了日: 2026-03-14
 - 作業内容: フィルタシステムをパイプライン方式（`[][]token`）に全面リファクタ。`|`でフィルタを複数ステージに分割し、各ステージの出力を次のステージの入力に渡す`applyPipeline`/`applyStage`関数を実装。`.[]`配列/オブジェクトイテレータ追加（配列は全要素展開、オブジェクトはキーのアルファベット順で値を展開、ファンアウト対応）。`length`組み込み関数追加（配列→要素数、オブジェクト→キー数、文字列→rune数、null→0、数値→絶対値）。`.items[]`や`.[].name`のような単一ステージ内でのイテレータ+アクセスの組み合わせ、`.[] | .items | length`のような複数ステージパイプラインも全て動作。テスト30件追加（Iterator 12件、IteratorErrors 4件、Length 13件、LengthErrors 1件、Pipe 5件、Run追加3件、UnknownFunction 1件、ParseFilter追加14件）、累計75件ALL PASS。
+
+## gf-jq Tier 3: select(条件)フィルタ・keys・values
+- 完了日: 2026-03-14
+- 作業内容: `keys`組み込み関数追加（オブジェクト→ソート済みキー配列、配列→インデックス配列）。`values`組み込み関数追加（オブジェクト→キーソート順の値配列、配列→そのまま）。`select(条件)`フィルタ追加。比較演算子（`==`/`!=`/`>`/`<`/`>=`/`<=`）による数値・文字列・null比較、演算子なしのtruthiness判定（null/falseを除外）に対応。`parseSelectCondition`で条件式パース、`evalSelect`で条件評価、`compareValues`で型別比較。`splitPipeline`関数で括弧内の`|`を保護するパイプ分割に改良。ネストされたキーアクセス・マルチバイト文字列・selectの後続パイプラインとの組み合わせも全て動作。テスト39件追加（Keys 6件、KeysErrors 3件、Values 4件、ValuesErrors 2件、Select 15件、SelectErrors 2件、ParseFilterTier3 7件）、累計114件ALL PASS。

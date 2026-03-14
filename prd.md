@@ -320,7 +320,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 - [x] Tier 1: `cmd/gf-jq/` 作成（go.mod初期化、go.workに追加）。`.key`、`.key.nested`、`.[0]` の基本パスアクセス、stdin対応。テスト作成・通過。テスト結果を `docs/test-results/gf-jq.md` に記録。
 - [x] Tier 2: パイプ `|`、配列操作 `.[]`、`length`。テスト追加・通過。テスト結果を更新。
-- [ ] Tier 3: `select(条件)` フィルタ、`keys`、`values`。テスト追加・通過。テスト結果を更新。
+- [x] Tier 3: `select(条件)` フィルタ、`keys`、`values`。テスト追加・通過。テスト結果を更新。
 
 #### gf-hexdump（バイナリダンプ）
 
