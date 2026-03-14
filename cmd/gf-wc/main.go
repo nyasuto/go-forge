@@ -163,7 +163,7 @@ func printJSON(c counts, name string) {
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(jc)
+	_ = enc.Encode(jc)
 }
 
 func printJSONMulti(results []fileResult, total counts) {
@@ -190,7 +190,7 @@ func printJSONMulti(results []fileResult, total counts) {
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(out)
+	_ = enc.Encode(out)
 }
 
 func printCounts(c counts, name string, showAll, showLines, showWords, showBytes, showChars bool) {

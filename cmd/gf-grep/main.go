@@ -136,7 +136,7 @@ func expandRecursive(paths []string) ([]string, []error) {
 			files = append(files, p)
 			continue
 		}
-		filepath.Walk(p, func(path string, fi os.FileInfo, err error) error {
+		err = filepath.Walk(p, func(path string, fi os.FileInfo, err error) error {
 			if err != nil {
 				errs = append(errs, err)
 				return nil
@@ -146,6 +146,9 @@ func expandRecursive(paths []string) ([]string, []error) {
 			}
 			return nil
 		})
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 	return files, errs
 }
