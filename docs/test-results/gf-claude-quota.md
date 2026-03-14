@@ -236,3 +236,48 @@
 - runSetup関数追加（--tmux, --starship, --dry-run フラグパース）
 
 ### テスト合計: 103件（main: 20件 + api: 6件 + cache: 13件 + credentials: 5件 + output: 48件 + setup: 11件）、全PASS
+
+---
+
+## Phase 7: Linux対応・クロスプラットフォーム
+
+### 実行日: 2026-03-14
+
+### テスト結果: ALL PASS
+
+### テスト内訳
+
+#### internal/credentials/credentials_test.go (11件)
+- TestGetToken_EnvVar: CLAUDE_OAUTH_TOKEN環境変数からのトークン取得
+- TestGetToken_EnvVarEmpty: 空の環境変数でプラットフォーム固有メソッドにフォールスルー
+- TestGetToken_EnvVarPriority: 環境変数がプラットフォーム固有メソッドより優先されることを確認
+- TestGetTokenFromFile_ValidFile: Linux credentials.jsonからの正常トークン取得
+- TestGetTokenFromFile_MaxPlan: Max plan credentials の正常パース
+- TestGetTokenFromFile_FileNotFound: ファイル未存在時のエラー
+- TestGetTokenFromFile_InvalidJSON: 不正JSONのエラーハンドリング
+- TestGetTokenFromFile_MissingAccessToken: 空accessTokenのエラー
+- TestGetTokenFromFile_MissingOAuthField: claudeAiOauthフィールド欠落のエラー
+- TestGetTokenFromFile_DefaultPath: デフォルトパス（~/.config/claude-code/credentials.json）使用
+- TestGetTokenFromFile_WhitespaceInFile: ファイル内の空白文字ハンドリング
+
+#### 新規ファイル
+- `internal/credentials/credentials.go` — CredentialProviderインターフェース定義、GetToken()関数（環境変数→プラットフォーム固有の優先度）
+- `internal/credentials/linux.go` — GetTokenFromFile()関数（~/.config/claude-code/credentials.json直接読み取り）
+- `internal/credentials/provider_darwin.go` — `//go:build darwin` macOS Keychain経由のgetPlatformToken()
+- `internal/credentials/provider_linux.go` — `//go:build linux` ファイル経由のgetPlatformToken()
+- `internal/credentials/provider_other.go` — `//go:build !darwin && !linux` 未サポートプラットフォームのフォールバック
+- `internal/output/notify_darwin.go` — `//go:build darwin` macOS osascript通知
+- `internal/output/notify_linux.go` — `//go:build linux` notify-send通知
+- `internal/output/notify_other.go` — `//go:build !darwin && !linux` 通知なしフォールバック
+
+#### main.go 変更
+- `credentials.GetTokenFromKeychain(nil)` → `credentials.GetToken()` に変更（クロスプラットフォーム対応）
+
+#### watch.go 変更
+- `sendOSANotification`をプラットフォーム別ファイル（notify_*.go）に分離
+- `sendNotificationFunc`のデフォルトを`sendPlatformNotification`に変更
+
+#### クロスコンパイル確認
+- `GOOS=linux GOARCH=amd64 go build` — 成功
+
+### テスト合計: 114件（main: 20件 + api: 6件 + cache: 13件 + credentials: 16件 + output: 48件 + setup: 11件）、全PASS

@@ -134,7 +134,7 @@ func fetchUsage(stderr *os.File, opts *runOptions) (*api.UsageResponse, error) {
 		}
 	}
 
-	token, err := credentials.GetTokenFromKeychain(nil)
+	token, err := credentials.GetToken()
 	if err != nil {
 		return nil, err
 	}

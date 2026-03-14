@@ -360,7 +360,7 @@ gf-claude-quota setup [--tmux] [--starship] [--dry-run]
 
 #### Phase 7: Linux対応・クロスプラットフォーム
 
-- [ ] `internal/credentials/linux.go` — `~/.config/claude-code/credentials.json` 直接読み取り、環境変数 `CLAUDE_OAUTH_TOKEN` 対応。`internal/credentials/credentials.go` に共通CredentialProviderインターフェース定義。GOOSビルドタグでOS分岐。Linux通知（notify-send）対応。クロスコンパイル確認（`GOOS=linux GOARCH=amd64 go build`）。テスト追加・通過。テスト結果を更新。
+- [x] `internal/credentials/linux.go` — `~/.config/claude-code/credentials.json` 直接読み取り、環境変数 `CLAUDE_OAUTH_TOKEN` 対応。`internal/credentials/credentials.go` に共通CredentialProviderインターフェース定義。GOOSビルドタグでOS分岐。Linux通知（notify-send）対応。クロスコンパイル確認（`GOOS=linux GOARCH=amd64 go build`）。テスト追加・通過。テスト結果を更新。
 
 ---
 

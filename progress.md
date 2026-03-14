@@ -224,3 +224,7 @@
 ## gf-claude-quota Phase 6: 自動セットアップ
 - 完了日: 2026-03-14
 - 作業内容: `internal/setup/setup.go` 新規作成。`setup` サブコマンド実装。`~/.claude/settings.json` を読み取りstatusLineフィールドを追加（既存設定はバックアップ付き保存）。バイナリパス自動検出（`exec.LookPath` → `os.Executable` フォールバック）。`--tmux` でtmux statusbar設定例出力、`--starship` でstarship module設定例出力、`--dry-run` で変更プレビューのみ表示。既に同一設定の場合はスキップ。不正JSONの既存ファイルはエラー終了。テスト15件追加（setup_test.go 11件 + main_test.go 4件）、累計103件ALL PASS。
+
+## gf-claude-quota Phase 7: Linux対応・クロスプラットフォーム
+- 完了日: 2026-03-14
+- 作業内容: `internal/credentials/credentials.go`に共通`CredentialProvider`インターフェース定義と`GetToken()`関数（CLAUDE_OAUTH_TOKEN環境変数→プラットフォーム固有の優先度）。`internal/credentials/linux.go`に`GetTokenFromFile()`関数（`~/.config/claude-code/credentials.json`直接読み取り）。GOOSビルドタグで`provider_darwin.go`（macOS Keychain）、`provider_linux.go`（ファイル読み取り）、`provider_other.go`（フォールバック）にOS分岐。通知もビルドタグで`notify_darwin.go`（osascript）、`notify_linux.go`（notify-send）、`notify_other.go`（no-op）に分離。main.goの`credentials.GetTokenFromKeychain(nil)`を`credentials.GetToken()`に変更。`GOOS=linux GOARCH=amd64 go build`でクロスコンパイル確認済み。テスト11件追加、累計114件ALL PASS。

@@ -1,10 +1,5 @@
 package output
 
-import (
-	"fmt"
-	"os/exec"
-)
-
 // Notifier manages threshold notifications with deduplication.
 type Notifier struct {
 	threshold float64
@@ -20,7 +15,7 @@ func NewNotifier(threshold float64) *Notifier {
 }
 
 // Check evaluates whether a usage window has crossed the threshold
-// and sends a macOS notification if it hasn't already been sent for that window.
+// and sends a desktop notification if it hasn't already been sent for that window.
 func (n *Notifier) Check(windowName string, utilization float64) {
 	if utilization < n.threshold {
 		// Reset notification if usage drops below threshold
@@ -35,18 +30,11 @@ func (n *Notifier) Check(windowName string, utilization float64) {
 }
 
 // sendNotificationFunc is replaceable for testing.
-var sendNotificationFunc = sendOSANotification
+// Default is the platform-specific notification function (notify_*.go).
+var sendNotificationFunc = sendPlatformNotification
 
 func (n *Notifier) sendNotification(windowName string, utilization float64) {
 	sendNotificationFunc(windowName, utilization)
-}
-
-func sendOSANotification(windowName string, utilization float64) {
-	title := "gf-claude-quota"
-	msg := fmt.Sprintf("%s usage at %.0f%%", windowName, utilization)
-	script := fmt.Sprintf(`display notification %q with title %q`, msg, title)
-	// Best-effort: ignore errors (e.g., non-macOS)
-	_ = exec.Command("osascript", "-e", script).Run()
 }
 
 // ExportSendNotificationFunc returns the current sendNotificationFunc (for testing).
