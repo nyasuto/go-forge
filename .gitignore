@@ -1,0 +1,21 @@
+# Compiled binaries (in each cmd/gf-xxx/ directory)
+cmd/gf-*/gf-*
+!cmd/gf-*/*.go
+!cmd/gf-*/go.mod
+!cmd/gf-*/go.sum
+
+# Test binaries
+*.test
+
+# OS files
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Go build cache
+/vendor/
