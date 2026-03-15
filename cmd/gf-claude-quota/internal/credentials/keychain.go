@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"strings"
 )
 
 // keychainCredentials represents the JSON structure stored in macOS Keychain.
@@ -39,7 +38,7 @@ func GetTokenFromKeychain(runner CommandRunner) (string, error) {
 		return "", fmt.Errorf("failed to read keychain: %w (is Claude Code installed and logged in?)", err)
 	}
 
-	raw := strings.TrimSpace(string(output))
+	raw := trimSpace(string(output))
 	return ParseKeychainJSON(raw)
 }
 
