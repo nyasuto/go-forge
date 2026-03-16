@@ -947,8 +947,8 @@ func TestFormatXbar_Normal(t *testing.T) {
 	if !strings.Contains(out, "\U0001f4c518%") {
 		t.Error("missing 📅18% in title")
 	}
-	if !strings.Contains(out, "| color=green") {
-		t.Error("missing color=green in title (max 42% should be green)")
+	if !strings.Contains(out, "| color=white sfcolor=green") {
+		t.Error("missing color=white sfcolor=green in title (max 42% should be green)")
 	}
 
 	// Dropdown content
@@ -985,9 +985,9 @@ func TestFormatXbar_HighUtilization(t *testing.T) {
 	FormatXbar(&buf, usage)
 	out := buf.String()
 
-	// Max is 90% → red
-	if !strings.Contains(out, "| color=red") {
-		t.Error("title should be red for 90% max utilization")
+	// Max is 90% → title white with sfcolor red
+	if !strings.Contains(out, "| color=white sfcolor=red") {
+		t.Error("title should have color=white sfcolor=red for 90% max utilization")
 	}
 	if !strings.Contains(out, "5h Session | color=red") {
 		t.Error("5h Session should be red at 90%")
@@ -1009,8 +1009,8 @@ func TestFormatXbar_MediumUtilization(t *testing.T) {
 
 	// Max is 55% → yellow
 	lines := strings.Split(out, "\n")
-	if !strings.Contains(lines[0], "| color=yellow") {
-		t.Errorf("title should be yellow for 55%%, got: %s", lines[0])
+	if !strings.Contains(lines[0], "| color=white sfcolor=yellow") {
+		t.Errorf("title should have color=white sfcolor=yellow for 55%%, got: %s", lines[0])
 	}
 }
 
@@ -1074,8 +1074,8 @@ func TestFormatXbar_WithOpus(t *testing.T) {
 	}
 	// Max is 85% → title should be red
 	lines := strings.Split(out, "\n")
-	if !strings.Contains(lines[0], "| color=red") {
-		t.Errorf("title should be red when opus is 85%%, got: %s", lines[0])
+	if !strings.Contains(lines[0], "| color=white sfcolor=red") {
+		t.Errorf("title should have color=white sfcolor=red when opus is 85%%, got: %s", lines[0])
 	}
 }
 
