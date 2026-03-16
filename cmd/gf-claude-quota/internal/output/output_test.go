@@ -927,6 +927,188 @@ func TestNotifier_ZeroThreshold(t *testing.T) {
 	}
 }
 
+// --- FormatXbar tests ---
+
+func TestFormatXbar_Normal(t *testing.T) {
+	origNow := NowFunc
+	defer func() { NowFunc = origNow }()
+	NowFunc = func() time.Time {
+		return time.Date(2025, 11, 4, 2, 30, 0, 0, time.UTC)
+	}
+
+	var buf bytes.Buffer
+	FormatXbar(&buf, sampleUsage())
+	out := buf.String()
+
+	// Menu bar title
+	if !strings.Contains(out, "\u26a142%") {
+		t.Error("missing ⚡42% in title")
+	}
+	if !strings.Contains(out, "\U0001f4c518%") {
+		t.Error("missing 📅18% in title")
+	}
+	if !strings.Contains(out, "| color=green") {
+		t.Error("missing color=green in title (max 42% should be green)")
+	}
+
+	// Dropdown content
+	if !strings.Contains(out, "5h Session | color=green") {
+		t.Error("missing 5h Session dropdown")
+	}
+	if !strings.Contains(out, "7d Weekly | color=green") {
+		t.Error("missing 7d Weekly dropdown")
+	}
+	if !strings.Contains(out, "font=Menlo") {
+		t.Error("missing font=Menlo in bar line")
+	}
+	if !strings.Contains(out, "resets in 2h29m") {
+		t.Error("missing reset time")
+	}
+
+	// Footer
+	if !strings.Contains(out, "Refresh | refresh=true") {
+		t.Error("missing Refresh action")
+	}
+	if !strings.Contains(out, "Open Claude | href=https://claude.ai") {
+		t.Error("missing Open Claude link")
+	}
+}
+
+func TestFormatXbar_HighUtilization(t *testing.T) {
+	resetAt := "2099-01-01T00:00:00+00:00"
+	usage := &api.UsageResponse{
+		FiveHour: &api.UsageWindow{Utilization: 90.0, ResetsAt: &resetAt},
+		SevenDay: &api.UsageWindow{Utilization: 60.0, ResetsAt: &resetAt},
+	}
+
+	var buf bytes.Buffer
+	FormatXbar(&buf, usage)
+	out := buf.String()
+
+	// Max is 90% → red
+	if !strings.Contains(out, "| color=red") {
+		t.Error("title should be red for 90% max utilization")
+	}
+	if !strings.Contains(out, "5h Session | color=red") {
+		t.Error("5h Session should be red at 90%")
+	}
+	if !strings.Contains(out, "7d Weekly | color=yellow") {
+		t.Error("7d Weekly should be yellow at 60%")
+	}
+}
+
+func TestFormatXbar_MediumUtilization(t *testing.T) {
+	resetAt := "2099-01-01T00:00:00+00:00"
+	usage := &api.UsageResponse{
+		FiveHour: &api.UsageWindow{Utilization: 55.0, ResetsAt: &resetAt},
+	}
+
+	var buf bytes.Buffer
+	FormatXbar(&buf, usage)
+	out := buf.String()
+
+	// Max is 55% → yellow
+	lines := strings.Split(out, "\n")
+	if !strings.Contains(lines[0], "| color=yellow") {
+		t.Errorf("title should be yellow for 55%%, got: %s", lines[0])
+	}
+}
+
+func TestFormatXbar_NilWindows(t *testing.T) {
+	var buf bytes.Buffer
+	FormatXbar(&buf, &api.UsageResponse{})
+	out := strings.TrimSpace(buf.String())
+
+	if out != "Claude \u23f3" {
+		t.Errorf("output = %q, want 'Claude ⏳'", out)
+	}
+}
+
+func TestFormatXbar_Only5h(t *testing.T) {
+	resetAt := "2099-01-01T00:00:00+00:00"
+	usage := &api.UsageResponse{
+		FiveHour: &api.UsageWindow{Utilization: 30.0, ResetsAt: &resetAt},
+	}
+
+	var buf bytes.Buffer
+	FormatXbar(&buf, usage)
+	out := buf.String()
+
+	if !strings.Contains(out, "\u26a130%") {
+		t.Error("missing ⚡30% in title")
+	}
+	// Should NOT contain 📅 since no 7d data
+	if strings.Contains(out, "\U0001f4c5") {
+		t.Error("should not contain 📅 without 7d data")
+	}
+}
+
+func TestFormatXbar_NoResetTime(t *testing.T) {
+	usage := &api.UsageResponse{
+		FiveHour: &api.UsageWindow{Utilization: 42.0, ResetsAt: nil},
+	}
+
+	var buf bytes.Buffer
+	FormatXbar(&buf, usage)
+	out := buf.String()
+
+	if strings.Contains(out, "resets in") {
+		t.Error("should not show reset time when ResetsAt is nil")
+	}
+}
+
+func TestFormatXbar_WithOpus(t *testing.T) {
+	resetAt := "2099-01-01T00:00:00+00:00"
+	usage := &api.UsageResponse{
+		FiveHour:     &api.UsageWindow{Utilization: 42.0, ResetsAt: &resetAt},
+		SevenDay:     &api.UsageWindow{Utilization: 18.0, ResetsAt: &resetAt},
+		SevenDayOpus: &api.UsageWindow{Utilization: 85.0, ResetsAt: &resetAt},
+	}
+
+	var buf bytes.Buffer
+	FormatXbar(&buf, usage)
+	out := buf.String()
+
+	if !strings.Contains(out, "7d Opus | color=red") {
+		t.Error("missing 7d Opus at red color")
+	}
+	// Max is 85% → title should be red
+	lines := strings.Split(out, "\n")
+	if !strings.Contains(lines[0], "| color=red") {
+		t.Errorf("title should be red when opus is 85%%, got: %s", lines[0])
+	}
+}
+
+func TestMaxUtilization(t *testing.T) {
+	tests := []struct {
+		name  string
+		usage *api.UsageResponse
+		want  float64
+	}{
+		{"all nil", &api.UsageResponse{}, 0.0},
+		{"single window", &api.UsageResponse{
+			FiveHour: &api.UsageWindow{Utilization: 42.0},
+		}, 42.0},
+		{"multiple windows", &api.UsageResponse{
+			FiveHour: &api.UsageWindow{Utilization: 42.0},
+			SevenDay: &api.UsageWindow{Utilization: 85.0},
+		}, 85.0},
+		{"opus highest", &api.UsageResponse{
+			FiveHour:     &api.UsageWindow{Utilization: 10.0},
+			SevenDayOpus: &api.UsageWindow{Utilization: 95.0},
+		}, 95.0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := maxUtilization(tt.usage)
+			if got != tt.want {
+				t.Errorf("maxUtilization() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // --- ClearTerminalSeq tests ---
 
 func TestClearTerminalSeq(t *testing.T) {

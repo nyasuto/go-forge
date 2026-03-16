@@ -37,6 +37,7 @@ func run(args []string, stdout, stderr *os.File, stdin io.Reader) int {
 	jsonMode := fs.Bool("json", false, "output in JSON format")
 	onelineMode := fs.Bool("oneline", false, "output in oneline format")
 	statuslineMode := fs.Bool("statusline", false, "output in statusLine format")
+	xbarMode := fs.Bool("xbar", false, "output in xbar/SwiftBar plugin format")
 	formatTmpl := fs.String("format", "", "custom output template")
 	colorFlag := fs.String("color", "auto", "color mode: auto|always|never")
 	watchMode := fs.Bool("watch", false, "continuous monitoring mode")
@@ -82,11 +83,14 @@ func run(args []string, stdout, stderr *os.File, stdin io.Reader) int {
 	if *statuslineMode {
 		modeCount++
 	}
+	if *xbarMode {
+		modeCount++
+	}
 	if *formatTmpl != "" {
 		modeCount++
 	}
 	if modeCount > 1 {
-		fmt.Fprintln(stderr, "gf-claude-quota: --json, --oneline, --statusline, and --format are mutually exclusive")
+		fmt.Fprintln(stderr, "gf-claude-quota: --json, --oneline, --statusline, --xbar, and --format are mutually exclusive")
 		return 2
 	}
 
@@ -100,6 +104,7 @@ func run(args []string, stdout, stderr *os.File, stdin io.Reader) int {
 		jsonMode:       *jsonMode,
 		onelineMode:    *onelineMode,
 		statuslineMode: *statuslineMode,
+		xbarMode:       *xbarMode,
 		formatTmpl:     *formatTmpl,
 		stdinData:      stdinData,
 		colorMode:      colorMode,
@@ -118,6 +123,7 @@ type runOptions struct {
 	jsonMode       bool
 	onelineMode    bool
 	statuslineMode bool
+	xbarMode       bool
 	formatTmpl     string
 	stdinData      []byte
 	colorMode      output.ColorMode
@@ -238,6 +244,7 @@ func runSetup(args []string, stdout, stderr *os.File) int {
 
 	tmux := fs.Bool("tmux", false, "output tmux statusbar configuration")
 	starship := fs.Bool("starship", false, "output starship module configuration")
+	xbar := fs.Bool("xbar", false, "output xbar/SwiftBar plugin script")
 	dryRun := fs.Bool("dry-run", false, "preview changes without applying")
 
 	if err := fs.Parse(args); err != nil {
@@ -247,6 +254,7 @@ func runSetup(args []string, stdout, stderr *os.File) int {
 	return setup.Run(stdout, stderr, &setup.SetupOptions{
 		Tmux:     *tmux,
 		Starship: *starship,
+		Xbar:     *xbar,
 		DryRun:   *dryRun,
 	})
 }
@@ -259,6 +267,8 @@ func printUsage(out *os.File, usage *api.UsageResponse, opts *runOptions) {
 		output.FormatOneline(out, usage)
 	case opts.statuslineMode:
 		output.FormatStatusLine(out, usage, opts.stdinData)
+	case opts.xbarMode:
+		output.FormatXbar(out, usage)
 	case opts.formatTmpl != "":
 		output.FormatTemplate(out, usage, opts.stdinData, opts.formatTmpl)
 	default:

@@ -58,6 +58,32 @@ func TestPrintStarshipConfig(t *testing.T) {
 	}
 }
 
+func TestPrintXbarConfig(t *testing.T) {
+	origFind := FindBinaryPath
+	defer func() { FindBinaryPath = origFind }()
+	FindBinaryPath = func() (string, error) { return "/usr/local/bin/gf-claude-quota", nil }
+
+	var buf bytes.Buffer
+	code := Run(&buf, &bytes.Buffer{}, &SetupOptions{Xbar: true})
+
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "xbar") {
+		t.Errorf("output should contain 'xbar', got %q", out)
+	}
+	if !strings.Contains(out, "#!/bin/bash") {
+		t.Errorf("output should contain shebang, got %q", out)
+	}
+	if !strings.Contains(out, "/usr/local/bin/gf-claude-quota --xbar") {
+		t.Errorf("output should contain binary path with --xbar flag, got %q", out)
+	}
+	if !strings.Contains(out, "claude-quota.5m.sh") {
+		t.Errorf("output should contain plugin filename, got %q", out)
+	}
+}
+
 func TestSetupStatusLine_NewFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	settingsFile := filepath.Join(tmpDir, "settings.json")
