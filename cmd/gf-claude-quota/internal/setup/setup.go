@@ -16,9 +16,10 @@ type Settings map[string]interface{}
 
 // SetupOptions holds configuration for the setup command.
 type SetupOptions struct {
-	Tmux    bool
+	Tmux     bool
 	Starship bool
-	DryRun  bool
+	Xbar     bool
+	DryRun   bool
 }
 
 // settingsPath returns the path to ~/.claude/settings.json.
@@ -60,6 +61,9 @@ func Run(w, errw io.Writer, opts *SetupOptions) int {
 	if opts.Starship {
 		return printStarshipConfig(w)
 	}
+	if opts.Xbar {
+		return printXbarConfig(w)
+	}
 	return setupStatusLine(w, errw, opts.DryRun)
 }
 
@@ -95,6 +99,22 @@ func printStarshipConfig(w io.Writer) int {
 	fmt.Fprintln(w, "format = '[$output]($style) '")
 	fmt.Fprintln(w, "style = 'bold yellow'")
 	fmt.Fprintln(w, "shell = ['sh']")
+	return 0
+}
+
+func printXbarConfig(w io.Writer) int {
+	binPath, err := FindBinaryPath()
+	if err != nil {
+		binPath = "gf-claude-quota"
+	}
+
+	fmt.Fprintln(w, "# xbar/SwiftBar plugin for gf-claude-quota")
+	fmt.Fprintln(w, "# Save this script to your xbar/SwiftBar plugins directory:")
+	fmt.Fprintln(w, "#   ~/Library/Application Support/xbar/plugins/claude-quota.5m.sh")
+	fmt.Fprintln(w, "# Then make it executable: chmod +x claude-quota.5m.sh")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "#!/bin/bash")
+	fmt.Fprintf(w, "%s --xbar\n", binPath)
 	return 0
 }
 

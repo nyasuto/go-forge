@@ -105,6 +105,10 @@ func TestRun_MutuallyExclusiveFlags(t *testing.T) {
 		{"oneline+statusline", []string{"--oneline", "--statusline"}},
 		{"json+format", []string{"--json", "--format={5h}"}},
 		{"statusline+format", []string{"--statusline", "--format={5h}"}},
+		{"json+xbar", []string{"--json", "--xbar"}},
+		{"xbar+oneline", []string{"--xbar", "--oneline"}},
+		{"xbar+statusline", []string{"--xbar", "--statusline"}},
+		{"xbar+format", []string{"--xbar", "--format={5h}"}},
 	}
 
 	for _, tt := range tests {
@@ -400,6 +404,39 @@ func TestRun_SetupStarship(t *testing.T) {
 	}
 }
 
+func TestRun_SetupXbar(t *testing.T) {
+	stdout, err := os.CreateTemp("", "stdout-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(stdout.Name())
+	defer stdout.Close()
+
+	stderr, err := os.CreateTemp("", "stderr-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(stderr.Name())
+	defer stderr.Close()
+
+	code := run([]string{"setup", "--xbar"}, stdout, stderr, strings.NewReader(""))
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+
+	stdout.Seek(0, 0)
+	buf := make([]byte, 4096)
+	n, _ := stdout.Read(buf)
+	out := string(buf[:n])
+
+	if !strings.Contains(out, "xbar") {
+		t.Errorf("output should contain 'xbar', got %q", out)
+	}
+	if !strings.Contains(out, "--xbar") {
+		t.Errorf("output should contain '--xbar', got %q", out)
+	}
+}
+
 func TestRun_SetupDryRun(t *testing.T) {
 	stdout, err := os.CreateTemp("", "stdout-*")
 	if err != nil {
@@ -454,6 +491,11 @@ func TestPrintUsage_AllModes(t *testing.T) {
 			name: "oneline mode",
 			opts: &runOptions{onelineMode: true},
 			want: "5h:42%",
+		},
+		{
+			name: "xbar mode",
+			opts: &runOptions{xbarMode: true},
+			want: "\u26a142%",
 		},
 	}
 
