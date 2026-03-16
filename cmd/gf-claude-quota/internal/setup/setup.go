@@ -62,7 +62,7 @@ func Run(w, errw io.Writer, opts *SetupOptions) int {
 		return printStarshipConfig(w)
 	}
 	if opts.Xbar {
-		return printXbarConfig(w)
+		return setupXbar(w, errw, opts.DryRun)
 	}
 	return setupStatusLine(w, errw, opts.DryRun)
 }
@@ -102,19 +102,65 @@ func printStarshipConfig(w io.Writer) int {
 	return 0
 }
 
-func printXbarConfig(w io.Writer) int {
+// XbarPluginPath returns the default xbar plugin file path.
+// Exported for testing via variable override.
+var XbarPluginPath = func() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "Library", "Application Support", "xbar", "plugins", "claude-quota.5m.sh")
+}
+
+func xbarPluginContent(binPath string) string {
+	return "#!/bin/bash\n" + binPath + " --xbar\n"
+}
+
+func setupXbar(w, errw io.Writer, dryRun bool) int {
 	binPath, err := FindBinaryPath()
 	if err != nil {
-		binPath = "gf-claude-quota"
+		fmt.Fprintf(errw, "gf-claude-quota: %v\n", err)
+		return 1
 	}
 
-	fmt.Fprintln(w, "# xbar/SwiftBar plugin for gf-claude-quota")
-	fmt.Fprintln(w, "# Save this script to your xbar/SwiftBar plugins directory:")
-	fmt.Fprintln(w, "#   ~/Library/Application Support/xbar/plugins/claude-quota.5m.sh")
-	fmt.Fprintln(w, "# Then make it executable: chmod +x claude-quota.5m.sh")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "#!/bin/bash")
-	fmt.Fprintf(w, "%s --xbar\n", binPath)
+	pluginPath := XbarPluginPath()
+	if pluginPath == "" {
+		fmt.Fprintln(errw, "gf-claude-quota: could not determine home directory")
+		return 1
+	}
+
+	content := xbarPluginContent(binPath)
+
+	// Check if already installed with same content
+	existingData, err := os.ReadFile(pluginPath)
+	if err == nil && string(existingData) == content {
+		fmt.Fprintf(w, "Plugin is already installed at %s\n", pluginPath)
+		return 0
+	}
+
+	if dryRun {
+		fmt.Fprintln(w, "Dry run: the following plugin would be created:")
+		fmt.Fprintln(w, "")
+		fmt.Fprintf(w, "File: %s\n", pluginPath)
+		fmt.Fprintln(w, "")
+		fmt.Fprint(w, content)
+		return 0
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(pluginPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Fprintf(errw, "gf-claude-quota: failed to create directory %s: %v\n", dir, err)
+		return 1
+	}
+
+	// Write plugin file with executable permission
+	if err := os.WriteFile(pluginPath, []byte(content), 0755); err != nil {
+		fmt.Fprintf(errw, "gf-claude-quota: failed to write %s: %v\n", pluginPath, err)
+		return 1
+	}
+
+	fmt.Fprintf(w, "Plugin installed: %s\n", pluginPath)
 	return 0
 }
 

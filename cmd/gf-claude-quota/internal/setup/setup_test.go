@@ -58,29 +58,155 @@ func TestPrintStarshipConfig(t *testing.T) {
 	}
 }
 
-func TestPrintXbarConfig(t *testing.T) {
+func TestSetupXbar_NewFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	pluginFile := filepath.Join(tmpDir, "claude-quota.5m.sh")
+
+	origPath := XbarPluginPath
 	origFind := FindBinaryPath
-	defer func() { FindBinaryPath = origFind }()
+	defer func() {
+		XbarPluginPath = origPath
+		FindBinaryPath = origFind
+	}()
+	XbarPluginPath = func() string { return pluginFile }
 	FindBinaryPath = func() (string, error) { return "/usr/local/bin/gf-claude-quota", nil }
 
-	var buf bytes.Buffer
-	code := Run(&buf, &bytes.Buffer{}, &SetupOptions{Xbar: true})
+	var stdout, stderr bytes.Buffer
+	code := Run(&stdout, &stderr, &SetupOptions{Xbar: true})
+
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	// Verify file was created
+	data, err := os.ReadFile(pluginFile)
+	if err != nil {
+		t.Fatalf("failed to read plugin file: %v", err)
+	}
+	content := string(data)
+	if !strings.HasPrefix(content, "#!/bin/bash\n") {
+		t.Error("plugin should start with shebang")
+	}
+	if !strings.Contains(content, "/usr/local/bin/gf-claude-quota --xbar") {
+		t.Errorf("plugin should contain binary path with --xbar, got %q", content)
+	}
+
+	// Verify executable permission
+	info, _ := os.Stat(pluginFile)
+	if info.Mode()&0111 == 0 {
+		t.Error("plugin file should be executable")
+	}
+
+	if !strings.Contains(stdout.String(), "Plugin installed") {
+		t.Errorf("output should contain 'Plugin installed', got %q", stdout.String())
+	}
+}
+
+func TestSetupXbar_AlreadyInstalled(t *testing.T) {
+	tmpDir := t.TempDir()
+	pluginFile := filepath.Join(tmpDir, "claude-quota.5m.sh")
+
+	// Pre-create with matching content
+	content := "#!/bin/bash\n/usr/local/bin/gf-claude-quota --xbar\n"
+	os.WriteFile(pluginFile, []byte(content), 0755)
+
+	origPath := XbarPluginPath
+	origFind := FindBinaryPath
+	defer func() {
+		XbarPluginPath = origPath
+		FindBinaryPath = origFind
+	}()
+	XbarPluginPath = func() string { return pluginFile }
+	FindBinaryPath = func() (string, error) { return "/usr/local/bin/gf-claude-quota", nil }
+
+	var stdout, stderr bytes.Buffer
+	code := Run(&stdout, &stderr, &SetupOptions{Xbar: true})
 
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
 	}
-	out := buf.String()
-	if !strings.Contains(out, "xbar") {
-		t.Errorf("output should contain 'xbar', got %q", out)
+	if !strings.Contains(stdout.String(), "already installed") {
+		t.Errorf("output should contain 'already installed', got %q", stdout.String())
+	}
+}
+
+func TestSetupXbar_DryRun(t *testing.T) {
+	tmpDir := t.TempDir()
+	pluginFile := filepath.Join(tmpDir, "claude-quota.5m.sh")
+
+	origPath := XbarPluginPath
+	origFind := FindBinaryPath
+	defer func() {
+		XbarPluginPath = origPath
+		FindBinaryPath = origFind
+	}()
+	XbarPluginPath = func() string { return pluginFile }
+	FindBinaryPath = func() (string, error) { return "/usr/local/bin/gf-claude-quota", nil }
+
+	var stdout, stderr bytes.Buffer
+	code := Run(&stdout, &stderr, &SetupOptions{Xbar: true, DryRun: true})
+
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Dry run") {
+		t.Errorf("output should contain 'Dry run', got %q", out)
 	}
 	if !strings.Contains(out, "#!/bin/bash") {
-		t.Errorf("output should contain shebang, got %q", out)
+		t.Errorf("output should contain script content, got %q", out)
 	}
-	if !strings.Contains(out, "/usr/local/bin/gf-claude-quota --xbar") {
-		t.Errorf("output should contain binary path with --xbar flag, got %q", out)
+
+	// File should NOT be created
+	if _, err := os.Stat(pluginFile); !os.IsNotExist(err) {
+		t.Error("plugin file should not exist after dry run")
 	}
-	if !strings.Contains(out, "claude-quota.5m.sh") {
-		t.Errorf("output should contain plugin filename, got %q", out)
+}
+
+func TestSetupXbar_NestedDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	pluginFile := filepath.Join(tmpDir, "deep", "nested", "claude-quota.5m.sh")
+
+	origPath := XbarPluginPath
+	origFind := FindBinaryPath
+	defer func() {
+		XbarPluginPath = origPath
+		FindBinaryPath = origFind
+	}()
+	XbarPluginPath = func() string { return pluginFile }
+	FindBinaryPath = func() (string, error) { return "/usr/local/bin/gf-claude-quota", nil }
+
+	var stdout, stderr bytes.Buffer
+	code := Run(&stdout, &stderr, &SetupOptions{Xbar: true})
+
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	if _, err := os.Stat(pluginFile); os.IsNotExist(err) {
+		t.Error("plugin file should exist in nested directory")
+	}
+}
+
+func TestSetupXbar_NoHomeDir(t *testing.T) {
+	origPath := XbarPluginPath
+	origFind := FindBinaryPath
+	defer func() {
+		XbarPluginPath = origPath
+		FindBinaryPath = origFind
+	}()
+	XbarPluginPath = func() string { return "" }
+	FindBinaryPath = func() (string, error) { return "/usr/local/bin/gf-claude-quota", nil }
+
+	var stdout, stderr bytes.Buffer
+	code := Run(&stdout, &stderr, &SetupOptions{Xbar: true})
+
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "home directory") {
+		t.Errorf("stderr should contain 'home directory', got %q", stderr.String())
 	}
 }
 
