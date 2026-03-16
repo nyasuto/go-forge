@@ -52,7 +52,7 @@ func FormatXbar(w io.Writer, usage *api.UsageResponse) {
 		}
 		title += fmt.Sprintf("\U0001f4c5%.0f%%", pct7d)
 	}
-	fmt.Fprintf(w, "%s | color=%s\n", title, titleColor)
+	fmt.Fprintf(w, "%s | color=white sfcolor=%s\n", title, titleColor)
 
 	// Separator
 	fmt.Fprintln(w, "---")
