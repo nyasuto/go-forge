@@ -13,9 +13,9 @@ func (s *stubExitErr) ExitCode() int { return s.code }
 
 func TestIsClaudeRunningWithRunner(t *testing.T) {
 	tests := []struct {
-		name    string
-		runner  CommandRunner
-		want    bool
+		name   string
+		runner CommandRunner
+		want   bool
 	}{
 		{
 			name: "single bare claude match",
