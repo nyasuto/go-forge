@@ -180,22 +180,14 @@ func TestGetTokenFromFile_WhitespaceInFile(t *testing.T) {
 	}
 }
 
-// fakeLock implements the lock interface used by getTokenWithDeps.
+// fakeLock implements lockReleaser for getTokenWithDeps tests.
 type fakeLock struct {
-	released   bool
-	acquireErr error
-	releaseErr error
+	released bool
 }
 
-func (l *fakeLock) Acquire() error {
-	if l.acquireErr != nil {
-		return l.acquireErr
-	}
-	return nil
-}
 func (l *fakeLock) Release() error {
 	l.released = true
-	return l.releaseErr
+	return nil
 }
 
 func TestGetTokenWithDeps_EnvBypass(t *testing.T) {

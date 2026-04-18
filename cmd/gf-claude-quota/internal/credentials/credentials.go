@@ -15,6 +15,10 @@ type CredentialProvider interface {
 // `claude` process is currently running. Callers should surface this as a
 // short-lived state (1 minute menu-bar poll resolves it automatically once
 // Claude Code refreshes on its next API call).
+// ErrClaudeRunning message is intentionally capitalized for user-facing
+// display in the menu bar / error output.
+//
+//nolint:staticcheck // ST1005: user-facing message, capitalization is deliberate
 var ErrClaudeRunning = errors.New("Claude Code is running; its next API call will refresh the token — retry in a moment")
 
 // lockReleaser is the subset of FileLock used by getTokenWithDeps.
@@ -77,7 +81,7 @@ func getTokenWithDeps(d *getTokenDeps) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("acquiring refresh lock: %w", err)
 	}
-	defer lock.Release()
+	defer func() { _ = lock.Release() }()
 
 	// Re-read inside lock in case another instance just refreshed.
 	creds, err = d.loadCredentials()
